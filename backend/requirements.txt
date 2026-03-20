@@ -2,7 +2,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 openai-whisper
-torch
 pydub
 anthropic
 python-dotenv

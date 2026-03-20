@@ -1,0 +1,7 @@
+[phases.install]
+cmds = [
+  # Install CPU-only PyTorch first (~180 MB vs ~2 GB for the CUDA build).
+  # openai-whisper will see torch is already satisfied and skip reinstalling it.
+  "pip install torch --index-url https://download.pytorch.org/whl/cpu",
+  "pip install -r requirements.txt",
+]
