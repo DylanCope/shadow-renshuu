@@ -7,6 +7,18 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
+  .dark body {
+    background-color: #030712; /* gray-950 */
+    color-scheme: dark;
+  }
+
+  /* Force native select elements to respect theme colours */
+  .dark select {
+    background-color: #1f2937; /* gray-800 */
+    color: #f3f4f6; /* gray-100 */
+    color-scheme: dark;
+  }
+
   .font-jp {
     font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
   }

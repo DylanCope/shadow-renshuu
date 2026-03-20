@@ -262,7 +262,7 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
             {
               icon: '🤖',
               title: 'AI Feedback',
-              desc: 'Claude analyzes your pronunciation and gives personalized tips.',
+              desc: 'Large Language Model (LLM) based analysis of your transcribed sentences to give personalised tips.',
             },
           ].map((item) => (
             <div key={item.title} className="card p-4 text-center">

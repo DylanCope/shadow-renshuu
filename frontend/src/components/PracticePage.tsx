@@ -52,6 +52,17 @@ export default function PracticePage({
       next.splice(index, 2, merged)
       return next.map((s, i) => ({ ...s, id: i }))
     })
+    // Clear both merged sentences' scores; shift IDs above them down by 1
+    setProgress((prev) => {
+      const next: Record<number, SentenceProgress> = {}
+      for (const [key, val] of Object.entries(prev)) {
+        const id = parseInt(key)
+        if (id < index) next[id] = val
+        else if (id === index || id === index + 1) { /* dropped */ }
+        else next[id - 1] = { ...val, sentence_id: id - 1 }
+      }
+      return next
+    })
     if (currentIndex > index) setCurrentIndex((i) => Math.max(0, i - 1))
     else if (currentIndex === index + 1) setCurrentIndex(index)
   }
@@ -67,6 +78,17 @@ export default function PracticePage({
       next.splice(index, 1, sA, sB)
       return next.map((s, i) => ({ ...s, id: i }))
     })
+    // Clear the split sentence's score; shift IDs above it up by 1
+    setProgress((prev) => {
+      const next: Record<number, SentenceProgress> = {}
+      for (const [key, val] of Object.entries(prev)) {
+        const id = parseInt(key)
+        if (id < index) next[id] = val
+        else if (id === index) { /* dropped — now two new sentences */ }
+        else next[id + 1] = { ...val, sentence_id: id + 1 }
+      }
+      return next
+    })
   }
 
   // ── scoring ──────────────────────────────────────────────────────────────
@@ -80,6 +102,7 @@ export default function PracticePage({
           sentence_id: sentenceId,
           attempts: (existing?.attempts ?? 0) + 1,
           best_score: Math.max(score, existing?.best_score ?? 0),
+          latest_score: score,
           last_result: result,
         },
       }
@@ -95,6 +118,7 @@ export default function PracticePage({
           sentence_id: id,
           attempts: (existing?.attempts ?? 0) + 1,
           best_score: Math.max(result.score, existing?.best_score ?? 0),
+          latest_score: result.score,
           last_result: result,
         }
       }
@@ -132,7 +156,7 @@ export default function PracticePage({
               </svg>
             </button>
             <span className="text-xl hidden sm:inline">影</span>
-            <span className="font-bold text-base tracking-tight truncate">Shadow Renshu</span>
+            <span className="font-bold text-base tracking-tight truncate">Shadow Renshuu</span>
             <span className="hidden md:inline text-xs text-gray-400 dark:text-gray-500 ml-1 truncate">
               {sentences.length} sentences
             </span>
@@ -198,7 +222,7 @@ export default function PracticePage({
           <div className="flex-1 overflow-y-auto">
             {sentences.map((s, i) => {
               const prog = progress[s.id]
-              const score = prog?.best_score ?? null
+              const score = prog?.latest_score ?? null
               const attempted = prog && prog.attempts > 0
               const isActive = i === currentIndex
               const isLast = i === sentences.length - 1

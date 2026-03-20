@@ -5,6 +5,7 @@ import {
   getGeminiKey, setGeminiKey,
   getGeminiModel, setGeminiModel,
   getOllamaModel, setOllamaModel,
+  ollamaEnabled,
   type Provider,
 } from '../lib/api'
 
@@ -13,11 +14,12 @@ interface ApiKeyModalProps {
   onDismiss?: () => void
 }
 
-const PROVIDERS: { id: Provider; label: string; badge?: string }[] = [
+const ALL_PROVIDERS: { id: Provider; label: string; badge?: string }[] = [
   { id: 'anthropic', label: 'Anthropic Claude' },
   { id: 'gemini',    label: 'Google Gemini',  badge: 'Free tier' },
   { id: 'ollama',    label: 'Ollama (Local)',  badge: 'Offline' },
 ]
+const PROVIDERS = ollamaEnabled ? ALL_PROVIDERS : ALL_PROVIDERS.filter((p) => p.id !== 'ollama')
 
 export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
   const [provider, setProviderState] = useState<Provider>(getProvider)
@@ -46,7 +48,7 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-md shadow-2xl">
+      <div className="card w-full max-w-md shadow-2xl text-gray-900 dark:text-gray-100">
         <div className="p-6 space-y-5">
           {/* Header */}
           <div>
@@ -126,9 +128,8 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
                            bg-gray-50 dark:bg-gray-800 text-sm
                            focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
-                <option value="gemini-2.0-flash">gemini-2.0-flash (recommended, free tier)</option>
-                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (faster, free tier)</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash (recommended, free tier)</option>
+                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (faster, free tier)</option>
                 <option value="gemini-2.5-pro">gemini-2.5-pro</option>
               </select>
               <p className="text-xs text-gray-400 dark:text-gray-500">

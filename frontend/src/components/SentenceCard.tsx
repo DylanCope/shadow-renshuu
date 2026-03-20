@@ -63,8 +63,6 @@ export default function SentenceCard({
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(initialResult ?? null)
   const [error, setError] = useState<string | null>(null)
-  const [manualTranscript, setManualTranscript] = useState('')
-  const [showManualEntry, setShowManualEntry] = useState(false)
 
   // Furigana
   const [furiganaSegments, setFuriganaSegments] = useState<FuriganaSegment[] | null>(null)
@@ -78,14 +76,15 @@ export default function SentenceCard({
 
   // Playback of own recording
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null)
-  const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null)
   const [recorded, setRecorded] = useState(false)
   const [playingRecording, setPlayingRecording] = useState(false)
   const recordingAudioRef = useRef<HTMLAudioElement | null>(null)
   const blobPromiseRef = useRef<Promise<Blob> | null>(null)
 
-  // Whisper fallback transcription
+  // Whisper transcription (runs automatically after stop)
   const [transcribing, setTranscribing] = useState(false)
+  const [autoTranscript, setAutoTranscript] = useState<string | null>(null)
+  const [transcriptEditable, setTranscriptEditable] = useState('')
 
   // Edit mode
   const [editing, setEditing] = useState(false)
@@ -102,8 +101,6 @@ export default function SentenceCard({
     setIsPlaying(false)
     setResult(initialResult ?? null)
     setError(null)
-    setManualTranscript('')
-    setShowManualEntry(false)
     setEditing(false)
     setEditDraft(sentence.text)
     setFuriganaSegments(null)
@@ -111,9 +108,10 @@ export default function SentenceCard({
     setTranslationRevealed(false)
     setShowTranslation(false)
     setRecordingUrl(null)
-    setRecordingBlob(null)
     setRecorded(false)
     setPlayingRecording(false)
+    setAutoTranscript(null)
+    setTranscriptEditable('')
     blobPromiseRef.current = null
     audioRefs.current.forEach((a) => { a.pause(); a.currentTime = 0 })
   }, [sentence.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -172,10 +170,7 @@ export default function SentenceCard({
   const handleStartRecording = () => {
     setError(null)
     setRecordingUrl(null)
-    setRecordingBlob(null)
     setRecorded(false)
-    setManualTranscript('')
-    setShowManualEntry(false)
     blobPromiseRef.current = recorder.startRecording()
   }
 
@@ -183,26 +178,28 @@ export default function SentenceCard({
     recorder.stopRecording()
     const blob = await (blobPromiseRef.current?.catch(() => null) ?? null)
     if (blob && blob.size > 0) {
-      setRecordingBlob(blob)
       setRecordingUrl(URL.createObjectURL(blob))
+      // Auto-transcribe immediately so the user can review before submitting
+      setTranscribing(true)
+      setAutoTranscript(null)
+      setTranscriptEditable('')
+      try {
+        const text = await transcribeAudio(blob)
+        setAutoTranscript(text)
+        setTranscriptEditable(text)
+      } catch {
+        setAutoTranscript(null) // null signals fallback to manual entry
+      } finally {
+        setTranscribing(false)
+      }
     }
     setRecorded(true)
   }
 
   const handleSubmit = async () => {
     setError(null)
-    let speechText = ''
-    if (recordingBlob) {
-      setTranscribing(true)
-      try {
-        speechText = await transcribeAudio(recordingBlob)
-      } catch { /* fall through to manual entry */ }
-      finally { setTranscribing(false) }
-    }
-    if (!speechText) {
-      setShowManualEntry(true)
-      return
-    }
+    const speechText = transcriptEditable.trim()
+    if (!speechText) return
     await submitTranscript(speechText)
   }
 
@@ -549,6 +546,29 @@ export default function SentenceCard({
           {mode === 'record' && (
             <div className="flex flex-col items-center gap-4">
 
+              {/* Transcript toggle */}
+              <button
+                onClick={() => setShowTranscript((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                {showTranscript ? (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                    Hide transcript
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.641 0-8.58-3.007-9.964-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Show transcript
+                  </>
+                )}
+              </button>
+
               {/* Phase 1: record button — hide once stopped and reviewed */}
               {!recorded && (
                 <RecordButton
@@ -561,7 +581,7 @@ export default function SentenceCard({
               )}
 
               {/* Phase 2: review UI — shown after user stops recording */}
-              {recorded && !recorder.isRecording && !transcribing && !analyzing && !showManualEntry && (
+              {recorded && !recorder.isRecording && !analyzing && (
                 <div className="flex flex-col items-center gap-3 w-full">
                   {/* Playback */}
                   <button
@@ -587,31 +607,57 @@ export default function SentenceCard({
                     )}
                   </button>
 
-                  {/* Action row */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setRecorded(false); setRecordingUrl(null); setRecordingBlob(null); setPlayingRecording(false) }}
-                      className="btn-secondary text-sm"
-                    >
-                      Re-record
-                    </button>
-                    <button onClick={handleSubmit} className="btn-primary text-sm flex items-center gap-1.5">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  {/* Transcribing spinner */}
+                  {transcribing && (
+                    <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Submit for Analysis
-                    </button>
-                  </div>
-                </div>
-              )}
+                      Transcribing recording…
+                    </div>
+                  )}
 
-              {transcribing && (
-                <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400">
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Transcribing recording…
+                  {/* Transcript review — editable, or manual entry if transcription failed */}
+                  {!transcribing && (
+                    <div className="w-full space-y-1">
+                      {autoTranscript !== null ? (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Transcribed — edit if needed:</p>
+                      ) : (
+                        <p className="text-xs text-amber-500 dark:text-amber-400 text-center">Could not transcribe. Type what you said:</p>
+                      )}
+                      <textarea
+                        value={transcriptEditable}
+                        onChange={(e) => setTranscriptEditable(e.target.value)}
+                        placeholder="Type what you said in Japanese…"
+                        className="w-full h-16 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700
+                                   bg-gray-50 dark:bg-gray-800 text-sm font-jp
+                                   focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* Action row */}
+                  {!transcribing && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable('') }}
+                        className="btn-secondary text-sm"
+                      >
+                        Re-record
+                      </button>
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!transcriptEditable.trim()}
+                        className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Submit for Analysis
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -624,29 +670,6 @@ export default function SentenceCard({
                   Analyzing with AI…
                 </div>
               )}
-
-              {showManualEntry && !analyzing && (
-                <div className="w-full space-y-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                    Could not transcribe audio. Type what you said:
-                  </p>
-                  <textarea
-                    value={manualTranscript}
-                    onChange={(e) => setManualTranscript(e.target.value)}
-                    placeholder="Type what you said in Japanese…"
-                    className="w-full h-20 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700
-                               bg-gray-50 dark:bg-gray-800 text-sm font-jp
-                               focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                  />
-                  <button
-                    onClick={() => submitTranscript(manualTranscript)}
-                    disabled={!manualTranscript.trim()}
-                    className="w-full btn-primary text-sm"
-                  >
-                    Analyze
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -655,7 +678,7 @@ export default function SentenceCard({
               <ScoreDisplay result={result} />
               <div className="flex gap-2 justify-center flex-wrap">
                 <button
-                  onClick={() => { setResult(null); setShowManualEntry(false); setManualTranscript(''); setRecorded(false); setRecordingUrl(null); setRecordingBlob(null); setPlayingRecording(false); setMode('record') }}
+                  onClick={() => { setResult(null); setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable(''); setMode('record') }}
                   className="btn-secondary text-sm flex items-center gap-1.5"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

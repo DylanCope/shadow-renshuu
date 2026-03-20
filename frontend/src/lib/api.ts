@@ -1,13 +1,20 @@
 import type { AnalysisResult, FuriganaSegment, Session } from '../types'
 
-const BASE_URL = '/api'
+const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '') + '/api'
+
+/** Set VITE_SHOW_OLLAMA=false in production to hide the local Ollama option */
+export const ollamaEnabled = import.meta.env.VITE_SHOW_OLLAMA !== 'false'
 
 export type Provider = 'anthropic' | 'gemini' | 'ollama'
 
 // ── Provider / key storage ──────────────────────────────────────────────
 
 export function getProvider(): Provider {
-  return (localStorage.getItem('ai_provider') as Provider) ?? 'anthropic'
+  const stored = localStorage.getItem('ai_provider') as Provider | null
+  if (!stored) return 'anthropic'
+  // If Ollama is disabled in this deployment, fall back to anthropic
+  if (stored === 'ollama' && !ollamaEnabled) return 'anthropic'
+  return stored
 }
 export function setProvider(p: Provider) {
   localStorage.setItem('ai_provider', p)
@@ -36,15 +43,15 @@ export function setOllamaModel(model: string) {
 
 export function getGeminiModel(): string {
   const stored = localStorage.getItem('gemini_model')
-  // Migrate away from removed 1.x models
-  if (!stored || stored.startsWith('gemini-1.')) {
-    localStorage.setItem('gemini_model', 'gemini-2.0-flash')
-    return 'gemini-2.0-flash'
+  // Migrate away from removed/restricted models
+  if (!stored || stored.startsWith('gemini-1.') || stored === 'gemini-2.0-flash' || stored === 'gemini-2.0-flash-lite') {
+    localStorage.setItem('gemini_model', 'gemini-2.5-flash')
+    return 'gemini-2.5-flash'
   }
   return stored
 }
 export function setGeminiModel(model: string) {
-  localStorage.setItem('gemini_model', model.trim() || 'gemini-2.0-flash')
+  localStorage.setItem('gemini_model', model.trim() || 'gemini-2.5-flash')
 }
 
 /** Returns true if the current provider has the credentials it needs. */

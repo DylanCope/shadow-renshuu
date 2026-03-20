@@ -31,5 +31,6 @@ export interface SentenceProgress {
   sentence_id: number;
   attempts: number;
   best_score: number | null;
+  latest_score: number | null;
   last_result: AnalysisResult | null;
 }

@@ -119,7 +119,7 @@ export default function ScoreDisplay({ result }: ScoreDisplayProps) {
       {/* Disclaimer */}
       <p className="text-xs text-gray-400 dark:text-gray-600 text-center leading-relaxed px-2">
         Analysis is based purely on the transcript generated from your speech. It cannot analyse the audio directly,
-        therefore details of your speech such as rhythm and pitch are only captured by the speech-to-text processing.
+        therefore details of your speech such as rhythm and pitch are only captured by the speech-to-text processing. Additionally, LLMs are not perfect and may give inaccurate feedback, so please take the tips as suggestions and consult with a trusted language instructor or resource for comprehensive guidance.
       </p>
     </div>
   )

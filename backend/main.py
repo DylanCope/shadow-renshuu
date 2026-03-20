@@ -38,7 +38,10 @@ app = FastAPI(title="Shadow Renshu API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,7 +116,7 @@ async def call_llm_text(
     provider: str,
     api_key: str = "",
     ollama_model: str = "gemma3",
-    gemini_model: str = "gemini-1.5-flash",
+    gemini_model: str = "gemini-2.5-flash",
     max_tokens: int = 1024,
 ) -> str:
     """Call the configured LLM provider and return the text response."""
@@ -356,12 +359,12 @@ Scoring guide:
 - 0-39: Major issues, recommend listening more before attempting.
 
 If the student transcript is empty or very different, give a low score and focus tips on listening first.
-Keep in mind that we are only analyzing the transcribed text, which may have errors. If the transcript is inaccurate, note that in the feedback and focus on encouraging the student to listen more to the target sentence. We CANNOT give feedback on aspects like intonation or rhythm since we don't have the actual audio, only the transcript. However, if we can infer common pronunciation mistakes from the transcript errors (e.g. consistently missing particles), we can mention those in the tips.
+Keep in mind that we are only analyzing the transcribed text, which may have errors. If the transcript is inaccurate, note that in the feedback and focus on encouraging the student to listen more to the target sentence. We CANNOT give feedback on aspects like intonation or rhythm since we don't have the actual audio, only the transcript. However, if we can infer common pronunciation mistakes from the transcript errors (e.g. consistently missing particles), we can mention those in the tips. Additionally, if the speech-to-text seems to have confused homophones do not penalize the student. If the confusion is between two words that are written with the same kana but have different pitch (e.g. 橋 vs 箸) then mention this in the phonetic_notes as a common challenge with shadowing practice and highlight the correct pitch for the target word.
 
 Respond ONLY with the JSON object, no other text."""
 
     ollama_model = x_ollama_model or "gemma3"
-    gemini_model = x_gemini_model or "gemini-2.0-flash"
+    gemini_model = x_gemini_model or "gemini-2.5-flash"
     try:
         if provider == "anthropic":
             # Use extended thinking for deeper analysis
@@ -422,7 +425,7 @@ async def get_furigana(
     """Generate furigana readings for a Japanese text."""
     provider, api_key = resolve_provider(x_provider, x_api_key)
     ollama_model = x_ollama_model or "gemma3"
-    gemini_model = x_gemini_model or "gemini-2.0-flash"
+    gemini_model = x_gemini_model or "gemini-2.5-flash"
     prompt = f"""Add furigana readings to the following Japanese text.
 Return a JSON array where each element represents a word or particle. For elements containing kanji, include a "reading" field (hiragana). For pure kana, punctuation, or spaces, omit "reading".
 
@@ -456,7 +459,7 @@ async def translate_text(
     """Translate Japanese text to English."""
     provider, api_key = resolve_provider(x_provider, x_api_key)
     ollama_model = x_ollama_model or "gemma3"
-    gemini_model = x_gemini_model or "gemini-2.0-flash"
+    gemini_model = x_gemini_model or "gemini-2.5-flash"
     prompt = f"""Translate the following Japanese sentence into natural, fluent English.
 Return ONLY the English translation, no explanations.
 
