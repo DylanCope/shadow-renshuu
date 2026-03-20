@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  .font-jp {
+    font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  }
+
+  /* Custom scrollbar for dark mode */
+  .dark ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .dark ::-webkit-scrollbar-track {
+    background: #111827;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 3px;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #f3f4f6;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl;
+  }
+
+  .btn-primary {
+    @apply bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-medium
+           px-4 py-2 rounded-lg transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700
+           text-gray-700 dark:text-gray-300 font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400
+           px-3 py-2 rounded-lg transition-colors duration-150;
+  }
+}
+
+/* Recording pulse ring animation */
+@keyframes recording-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.recording-pulse {
+  animation: recording-ring 1.5s ease-out infinite;
+}
+
+/* Score gauge animation */
+@keyframes score-fill {
+  from {
+    stroke-dashoffset: 283;
+  }
+}
+
+.score-arc {
+  animation: score-fill 1s ease-out forwards;
+}

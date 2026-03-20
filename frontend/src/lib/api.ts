@@ -1,0 +1,162 @@
+import type { AnalysisResult, FuriganaSegment, Session } from '../types'
+
+const BASE_URL = '/api'
+
+export type Provider = 'anthropic' | 'gemini' | 'ollama'
+
+// ── Provider / key storage ──────────────────────────────────────────────
+
+export function getProvider(): Provider {
+  return (localStorage.getItem('ai_provider') as Provider) ?? 'anthropic'
+}
+export function setProvider(p: Provider) {
+  localStorage.setItem('ai_provider', p)
+}
+
+export function getApiKey(): string {
+  return localStorage.getItem('anthropic_api_key') ?? ''
+}
+export function setApiKey(key: string) {
+  localStorage.setItem('anthropic_api_key', key.trim())
+}
+
+export function getGeminiKey(): string {
+  return localStorage.getItem('gemini_api_key') ?? ''
+}
+export function setGeminiKey(key: string) {
+  localStorage.setItem('gemini_api_key', key.trim())
+}
+
+export function getOllamaModel(): string {
+  return localStorage.getItem('ollama_model') ?? 'gemma3'
+}
+export function setOllamaModel(model: string) {
+  localStorage.setItem('ollama_model', model.trim() || 'gemma3')
+}
+
+export function getGeminiModel(): string {
+  const stored = localStorage.getItem('gemini_model')
+  // Migrate away from removed 1.x models
+  if (!stored || stored.startsWith('gemini-1.')) {
+    localStorage.setItem('gemini_model', 'gemini-2.0-flash')
+    return 'gemini-2.0-flash'
+  }
+  return stored
+}
+export function setGeminiModel(model: string) {
+  localStorage.setItem('gemini_model', model.trim() || 'gemini-2.0-flash')
+}
+
+/** Returns true if the current provider has the credentials it needs. */
+export function isConfigured(): boolean {
+  const p = getProvider()
+  if (p === 'ollama') return true
+  if (p === 'gemini') return !!getGeminiKey()
+  return !!getApiKey()
+}
+
+// ── Request headers ─────────────────────────────────────────────────────
+
+function apiHeaders(extra?: Record<string, string>): Record<string, string> {
+  const provider = getProvider()
+  const key = provider === 'gemini' ? getGeminiKey() : getApiKey()
+  return {
+    ...(key ? { 'X-Api-Key': key } : {}),
+    'X-Provider': provider,
+    ...(provider === 'ollama' ? { 'X-Ollama-Model': getOllamaModel() } : {}),
+    ...(provider === 'gemini' ? { 'X-Gemini-Model': getGeminiModel() } : {}),
+    ...extra,
+  }
+}
+
+export async function uploadAudio(
+  audioFile: File,
+  transcript?: string,
+): Promise<Session> {
+  const form = new FormData()
+  form.append('audio', audioFile)
+  if (transcript && transcript.trim()) {
+    form.append('transcript', transcript.trim())
+  }
+
+  const res = await fetch(`${BASE_URL}/upload`, {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: form,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Upload failed')
+  }
+
+  const data = await res.json()
+  // Normalise segmentUrl → segmentUrls array
+  return {
+    ...data,
+    sentences: data.sentences.map((s: any) => ({
+      ...s,
+      segmentUrls: s.segmentUrls ?? [s.segmentUrl],
+    })),
+  } as Session
+}
+
+export async function analyzeAttempt(params: {
+  session_id: string
+  sentence_id: number
+  user_transcript: string
+  target_text: string
+}): Promise<AnalysisResult> {
+  const res = await fetch(`${BASE_URL}/analyze`, {
+    method: 'POST',
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(params),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Analysis failed')
+  }
+
+  return res.json()
+}
+
+export async function getFurigana(text: string): Promise<FuriganaSegment[]> {
+  const res = await fetch(`${BASE_URL}/furigana`, {
+    method: 'POST',
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Furigana fetch failed')
+  }
+  const data = await res.json()
+  return data.segments
+}
+
+export async function getTranslation(text: string): Promise<string> {
+  const res = await fetch(`${BASE_URL}/translate`, {
+    method: 'POST',
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Translation fetch failed')
+  }
+  const data = await res.json()
+  return data.translation
+}
+
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('audio', blob, 'recording.webm')
+  const res = await fetch(`${BASE_URL}/transcribe`, { method: 'POST', body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Transcription failed')
+  }
+  const data = await res.json()
+  return data.text as string
+}
