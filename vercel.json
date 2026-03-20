@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "buildCommand": "cd frontend && npm install && chmod +x node_modules/.bin/* && npm run build",
   "outputDirectory": "frontend/dist",
   "framework": null
 }
