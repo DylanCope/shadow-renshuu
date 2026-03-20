@@ -5,6 +5,7 @@ import uuid
 import json
 import logging
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -34,7 +35,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Shadow Renshu API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Pre-load the Whisper model at startup so the first request isn't slow
+    # and Railway's health check doesn't time out waiting.
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, get_model)
+    yield
+
+
+app = FastAPI(title="Shadow Renshu API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
