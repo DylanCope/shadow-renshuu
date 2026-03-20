@@ -1,2 +1,6 @@
 /.claude
 backend/uploads
+
+# Python
+**/__pycache__/
+**/*.pyc
