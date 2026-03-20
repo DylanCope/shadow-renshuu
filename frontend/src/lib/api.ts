@@ -98,13 +98,20 @@ export async function uploadAudio(
   }
 
   const data = await res.json()
-  // Normalise segmentUrl → segmentUrls array
+  // Resolve relative audio URLs to absolute using the configured backend base.
+  // When VITE_API_URL is set (production), relative paths like /api/audio/...
+  // must point to the backend host, not the Vercel frontend host.
+  const backendOrigin = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+  const toAbsolute = (url: string) =>
+    url.startsWith('http') ? url : `${backendOrigin}${url}`
+
+  // Normalise segmentUrl → segmentUrls array, then make URLs absolute
   return {
     ...data,
-    sentences: data.sentences.map((s: any) => ({
-      ...s,
-      segmentUrls: s.segmentUrls ?? [s.segmentUrl],
-    })),
+    sentences: data.sentences.map((s: any) => {
+      const urls: string[] = s.segmentUrls ?? [s.segmentUrl]
+      return { ...s, segmentUrls: urls.map(toAbsolute) }
+    }),
   } as Session
 }
 

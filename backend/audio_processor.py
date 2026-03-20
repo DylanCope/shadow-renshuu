@@ -7,14 +7,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Load Whisper model once at module level.
-# 'tiny' is ~4x faster than 'base' on CPU and still very accurate for Japanese.
+# Model size is configurable via the WHISPER_MODEL env var (default: 'tiny').
+# Options: tiny, base, small, medium, large — larger = more accurate but slower and more RAM.
 _model = None
+_model_name = os.getenv("WHISPER_MODEL", "tiny")
 
 def get_model():
     global _model
     if _model is None:
-        logger.info("Loading Whisper model...")
-        _model = whisper.load_model("tiny")
+        logger.info(f"Loading Whisper model '{_model_name}'...")
+        _model = whisper.load_model(_model_name)
         logger.info("Whisper model loaded.")
     return _model
 
