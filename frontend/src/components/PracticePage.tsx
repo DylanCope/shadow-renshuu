@@ -3,6 +3,7 @@ import SentenceCard from './SentenceCard'
 import MultiSentenceMode from './MultiSentenceMode'
 import ProgressTracker from './ProgressTracker'
 import ThemeToggle from './ThemeToggle'
+import { isConfigured } from '../lib/api'
 import type { Session, Sentence, SentenceProgress, AnalysisResult } from '../types'
 
 interface PracticePageProps {
@@ -166,10 +167,12 @@ export default function PracticePage({
           <div className="flex items-center gap-2">
             {/* Furigana toggle */}
             <button
-              onClick={() => setShowFurigana((v) => !v)}
-              title={showFurigana ? 'Hide furigana' : 'Show furigana'}
+              onClick={() => isConfigured() && setShowFurigana((v) => !v)}
+              title={isConfigured() ? (showFurigana ? 'Hide furigana' : 'Show furigana') : 'Add an AI API key in settings (✨) to enable furigana'}
               className={`btn-ghost px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                showFurigana
+                !isConfigured()
+                  ? 'opacity-40 cursor-not-allowed'
+                  : showFurigana
                   ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
                   : ''
               }`}

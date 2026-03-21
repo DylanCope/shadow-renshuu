@@ -9,7 +9,7 @@ import type { Session } from './types'
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const { darkMode, toggle } = useTheme()
-  const [showKeyModal, setShowKeyModal] = useState(() => !isConfigured())
+  const [showKeyModal, setShowKeyModal] = useState(false)
 
   return (
     <div>

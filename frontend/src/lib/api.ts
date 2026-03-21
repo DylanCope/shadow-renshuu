@@ -163,7 +163,7 @@ export async function getTranslation(text: string): Promise<string> {
   return data.translation
 }
 
-export async function transcribeAudio(blob: Blob): Promise<string> {
+export async function transcribeAudio(blob: Blob, signal?: AbortSignal): Promise<string> {
   const form = new FormData()
   // Derive the correct extension from the actual recorded MIME type so ffmpeg decodes properly.
   // Mobile Chrome records audio/mp4; desktop Chrome records audio/webm;codecs=opus.
@@ -172,7 +172,7 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
     : /ogg/i.test(type) ? 'ogg'
     : 'webm'
   form.append('audio', blob, `recording.${ext}`)
-  const res = await fetch(`${BASE_URL}/transcribe`, { method: 'POST', body: form })
+  const res = await fetch(`${BASE_URL}/transcribe`, { method: 'POST', body: form, signal })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Transcription failed')

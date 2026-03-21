@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import RecordButton from './RecordButton'
 import ScoreDisplay from './ScoreDisplay'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
-import { analyzeAttempt, getFurigana, getTranslation, transcribeAudio } from '../lib/api'
+import { analyzeAttempt, getFurigana, getTranslation, transcribeAudio, isConfigured } from '../lib/api'
 import type { Sentence, AnalysisResult, FuriganaSegment, PracticeMode } from '../types'
 
 interface SentenceCardProps {
@@ -131,6 +131,7 @@ export default function SentenceCard({
   const [transcribing, setTranscribing] = useState(false)
   const [autoTranscript, setAutoTranscript] = useState<string | null>(null)
   const [transcriptEditable, setTranscriptEditable] = useState('')
+  const transcribeAbortRef = useRef<AbortController | null>(null)
 
   // Mic device selection
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([])
@@ -182,6 +183,8 @@ export default function SentenceCard({
     setAnalyzing(false)
     blobPromiseRef.current = null
     recordingBlobRef.current = null
+    transcribeAbortRef.current?.abort()
+    transcribeAbortRef.current = null
     audioRefs.current.forEach((a) => { a.pause(); a.currentTime = 0 })
   }, [sentence.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -254,15 +257,19 @@ export default function SentenceCard({
       setTranscribing(true)
       setAutoTranscript(null)
       setTranscriptEditable('')
+      const abortController = new AbortController()
+      transcribeAbortRef.current = abortController
       try {
-        const text = await transcribeAudio(blob)
+        const text = await transcribeAudio(blob, abortController.signal)
+        if (abortController.signal.aborted) return
         const trimmed = text.trim()
         setAutoTranscript(trimmed || null)  // empty string → null (show manual entry fallback)
         setTranscriptEditable(trimmed)
-      } catch {
+      } catch (err) {
+        if ((err as any)?.name === 'AbortError') return  // user re-recorded, ignore
         setAutoTranscript(null) // null signals fallback to manual entry
       } finally {
-        setTranscribing(false)
+        if (!abortController.signal.aborted) setTranscribing(false)
       }
     } else {
       setRecorded(true)
@@ -395,15 +402,27 @@ export default function SentenceCard({
 
       {/* Translation row */}
       {!showTranslation ? (
-        <button
-          onClick={handleShowTranslation}
-          className="mt-2 text-xs text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors flex items-center gap-1 mx-auto"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
-          </svg>
-          Generate translation
-        </button>
+        isConfigured() ? (
+          <button
+            onClick={handleShowTranslation}
+            className="mt-2 text-xs text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors flex items-center gap-1 mx-auto"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
+            </svg>
+            Generate translation
+          </button>
+        ) : (
+          <span
+            title="Add an AI API key in settings (✨) to enable translations"
+            className="mt-2 text-xs text-gray-300 dark:text-gray-700 flex items-center gap-1 mx-auto cursor-not-allowed select-none"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
+            </svg>
+            Generate translation
+          </span>
+        )
       ) : (
         <div className="mt-2">
           {translationLoading ? (
@@ -727,27 +746,45 @@ export default function SentenceCard({
                     </div>
                   )}
 
-                  {/* Action row */}
-                  {!transcribing && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => { setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable(''); recordingBlobRef.current = null }}
-                        className="btn-secondary text-sm"
-                      >
-                        Re-record
-                      </button>
-                      <button
-                        onClick={handleSubmit}
-                        disabled={!transcriptEditable.trim()}
-                        className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Submit for Analysis
-                      </button>
-                    </div>
-                  )}
+                  {/* Action row — Re-record always visible; Submit only after transcription done */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        transcribeAbortRef.current?.abort()
+                        transcribeAbortRef.current = null
+                        setTranscribing(false)
+                        setRecorded(false); setRecordingUrl(null); setPlayingRecording(false)
+                        setAutoTranscript(null); setTranscriptEditable(''); recordingBlobRef.current = null
+                      }}
+                      className="btn-secondary text-sm"
+                    >
+                      Re-record
+                    </button>
+                    {!transcribing && (
+                      isConfigured() ? (
+                        <button
+                          onClick={handleSubmit}
+                          disabled={!transcriptEditable.trim()}
+                          className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Submit for Analysis
+                        </button>
+                      ) : (
+                        <span
+                          title="Add an AI API key in settings (✨) to enable analysis"
+                          className="btn-primary text-sm flex items-center gap-1.5 opacity-40 cursor-not-allowed select-none"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Submit for Analysis
+                        </span>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
 
