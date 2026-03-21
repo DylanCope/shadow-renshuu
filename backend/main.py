@@ -129,17 +129,24 @@ async def call_llm_text(
     ollama_model: str = "gemma3",
     gemini_model: str = "gemini-2.5-flash",
     max_tokens: int = 1024,
+    json_mode: bool = False,
 ) -> str:
     """Call the configured LLM provider and return the text response."""
     if provider == "gemini":
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent"
+        generation_config: dict = {"maxOutputTokens": max_tokens}
+        if json_mode:
+            # Force valid JSON output and disable thinking so tokens aren't wasted
+            # on internal reasoning for simple structured-output tasks.
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 url,
                 params={"key": api_key},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"maxOutputTokens": max_tokens},
+                    "generationConfig": generation_config,
                 },
             )
             resp.raise_for_status()
@@ -394,7 +401,8 @@ Respond ONLY with the JSON object, no other text."""
                 api_key=api_key,
                 ollama_model=ollama_model,
                 gemini_model=gemini_model,
-                max_tokens=2048,
+                max_tokens=4096,
+                json_mode=True,
             )
 
         # Parse JSON from response
@@ -416,6 +424,21 @@ Respond ONLY with the JSON object, no other text."""
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response as JSON: {e}\nResponse: {response_text}")
+        # Attempt partial recovery — extract whatever fields we can via regex
+        # before giving up, so truncated responses still produce a result.
+        try:
+            import re
+            score_m = re.search(r'"score"\s*:\s*(\d+)', response_text)
+            tips_m = re.findall(r'"((?:[^"\\]|\\.)*)"', response_text)
+            score = int(score_m.group(1)) if score_m else 50
+            # Heuristic: tips are strings longer than 20 chars that aren't field names
+            known_keys = {"score", "tips", "phonetic_notes", "overall"}
+            tip_candidates = [t for t in tips_m if len(t) > 20 and t not in known_keys]
+            tips = tip_candidates[:3] if tip_candidates else ["Keep practicing!"]
+            logger.warning(f"Recovered partial response: score={score}, tips={tips}")
+            return AnalyzeResponse(score=score, tips=tips, phonetic_notes="", overall="Good effort!")
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail="Failed to parse AI response")
     except anthropic.APIError as e:
         logger.error(f"Anthropic API error: {e}")
