@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Pre-load the Whisper model at startup so the first request isn't slow
     # and Railway's health check doesn't time out waiting.
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, get_model)
     yield
 
@@ -87,7 +87,19 @@ async def process_upload_job(
         jobs[job_id]["progress"] = "Running speech recognition…"
 
         loop = asyncio.get_running_loop()
-        sentences_raw = await loop.run_in_executor(None, lambda: transcribe_audio(str(audio_path)))
+        TRANSCRIBE_TIMEOUT = 20 * 60  # 20 minutes hard limit
+        try:
+            sentences_raw = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: transcribe_audio(str(audio_path))),
+                timeout=TRANSCRIBE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            jobs[job_id].update({
+                "status": "error",
+                "error": "Speech recognition timed out. The audio may be too long for this server. Try a shorter clip.",
+                "ts": time.time(),
+            })
+            return
 
         jobs[job_id]["status"] = "segmenting"
         jobs[job_id]["progress"] = "Splitting audio into sentences…"
