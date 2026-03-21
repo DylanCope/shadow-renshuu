@@ -34,7 +34,7 @@ def transcribe_audio(audio_path: str) -> List[Dict[str, Any]]:
         audio_path,
         language="ja",
         word_timestamps=True,
-        verbose=False,
+        verbose=True,
         fp16=False,
     )
 

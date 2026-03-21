@@ -73,7 +73,7 @@ jobs: dict[str, dict[str, Any]] = {}
 JOB_TTL = 3600  # seconds before completed/failed jobs are evicted
 
 
-async def process_upload_job(
+def _run_job_thread(
     job_id: str,
     session_id: str,
     audio_path: Path,
@@ -81,25 +81,16 @@ async def process_upload_job(
     transcript: Optional[str],
     sdir: Path,
 ):
-    """Run Whisper + segmentation in the background and store the result in `jobs`."""
+    """
+    Run Whisper + segmentation in a dedicated background thread.
+    Using a plain thread (not the asyncio executor) keeps the event loop
+    completely free to handle status-poll requests while Whisper runs.
+    """
     try:
         jobs[job_id]["status"] = "transcribing"
         jobs[job_id]["progress"] = "Running speech recognition…"
 
-        loop = asyncio.get_running_loop()
-        TRANSCRIBE_TIMEOUT = 20 * 60  # 20 minutes hard limit
-        try:
-            sentences_raw = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: transcribe_audio(str(audio_path))),
-                timeout=TRANSCRIBE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            jobs[job_id].update({
-                "status": "error",
-                "error": "Speech recognition timed out. The audio may be too long for this server. Try a shorter clip.",
-                "ts": time.time(),
-            })
-            return
+        sentences_raw = transcribe_audio(str(audio_path))
 
         jobs[job_id]["status"] = "segmenting"
         jobs[job_id]["progress"] = "Splitting audio into sentences…"
@@ -379,9 +370,16 @@ async def upload_audio(
 
     logger.info(f"Saved upload to {audio_path} (session {session_id}, job {job_id})")
 
-    # Register job and kick off background processing
+    # Register job and kick off background processing in a dedicated thread.
+    # A plain thread keeps the asyncio event loop completely free to handle
+    # status-poll requests while Whisper (CPU-bound) runs.
     jobs[job_id] = {"status": "pending", "progress": "Starting…", "result": None, "error": None, "ts": time.time()}
-    asyncio.create_task(process_upload_job(job_id, session_id, audio_path, audio_filename, transcript, sdir))
+    t = threading.Thread(
+        target=_run_job_thread,
+        args=(job_id, session_id, audio_path, audio_filename, transcript, sdir),
+        daemon=True,
+    )
+    t.start()
 
     return JSONResponse({"job_id": job_id})
 
