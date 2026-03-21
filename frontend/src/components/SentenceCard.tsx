@@ -76,6 +76,7 @@ export default function SentenceCard({
 
   // Playback of own recording
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null)
+  const recordingBlobRef = useRef<Blob | null>(null)
   const [recorded, setRecorded] = useState(false)
   const [playingRecording, setPlayingRecording] = useState(false)
   const recordingAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -115,6 +116,7 @@ export default function SentenceCard({
     setTranscribing(false)
     setAnalyzing(false)
     blobPromiseRef.current = null
+    recordingBlobRef.current = null
     audioRefs.current.forEach((a) => { a.pause(); a.currentTime = 0 })
   }, [sentence.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -180,8 +182,10 @@ export default function SentenceCard({
     recorder.stopRecording()
     const blob = await (blobPromiseRef.current?.catch(() => null) ?? null)
     if (blob && blob.size > 0) {
+      recordingBlobRef.current = blob
       setRecordingUrl(URL.createObjectURL(blob))
-      // Auto-transcribe immediately so the user can review before submitting
+      // Show the review UI immediately — transcription spinner displays within it
+      setRecorded(true)
       setTranscribing(true)
       setAutoTranscript(null)
       setTranscriptEditable('')
@@ -194,8 +198,9 @@ export default function SentenceCard({
       } finally {
         setTranscribing(false)
       }
+    } else {
+      setRecorded(true)
     }
-    setRecorded(true)
   }
 
   const handleSubmit = async () => {
@@ -645,7 +650,7 @@ export default function SentenceCard({
                   {!transcribing && (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => { setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable('') }}
+                        onClick={() => { setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable(''); recordingBlobRef.current = null }}
                         className="btn-secondary text-sm"
                       >
                         Re-record
@@ -682,7 +687,7 @@ export default function SentenceCard({
               <ScoreDisplay result={result} />
               <div className="flex gap-2 justify-center flex-wrap">
                 <button
-                  onClick={() => { setResult(null); setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable(''); setMode('record') }}
+                  onClick={() => { setResult(null); setRecorded(false); setRecordingUrl(null); setPlayingRecording(false); setAutoTranscript(null); setTranscriptEditable(''); recordingBlobRef.current = null; setMode('record') }}
                   className="btn-secondary text-sm flex items-center gap-1.5"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
