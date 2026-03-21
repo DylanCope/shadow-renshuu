@@ -3,7 +3,6 @@ import UploadPage from './components/UploadPage'
 import PracticePage from './components/PracticePage'
 import ApiKeyModal from './components/ApiKeyModal'
 import { useTheme } from './hooks/useTheme'
-import { isConfigured } from './lib/api'
 import type { Session } from './types'
 
 export default function App() {
@@ -32,7 +31,7 @@ export default function App() {
       {showKeyModal && (
         <ApiKeyModal
           onSave={() => setShowKeyModal(false)}
-          onDismiss={isConfigured() ? () => setShowKeyModal(false) : undefined}
+          onDismiss={() => setShowKeyModal(false)}
         />
       )}
     </div>

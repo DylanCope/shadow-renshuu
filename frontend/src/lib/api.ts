@@ -163,6 +163,23 @@ export async function getTranslation(text: string): Promise<string> {
   return data.translation
 }
 
+export async function verifyApiKey(
+  provider: Provider,
+  key: string,
+  opts: { geminiModel?: string } = {},
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'X-Provider': provider,
+    ...(key ? { 'X-Api-Key': key } : {}),
+    ...(opts.geminiModel ? { 'X-Gemini-Model': opts.geminiModel } : {}),
+  }
+  const res = await fetch(`${BASE_URL}/verify-key`, { method: 'POST', headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Verification failed' }))
+    throw new Error(err.detail || 'Invalid API key')
+  }
+}
+
 export async function transcribeAudio(blob: Blob, signal?: AbortSignal): Promise<string> {
   const form = new FormData()
   // Derive the correct extension from the actual recorded MIME type so ffmpeg decodes properly.

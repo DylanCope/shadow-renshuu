@@ -6,6 +6,7 @@ import {
   getGeminiModel, setGeminiModel,
   getOllamaModel, setOllamaModel,
   ollamaEnabled,
+  verifyApiKey,
   type Provider,
 } from '../lib/api'
 
@@ -28,19 +29,44 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
   const [geminiModel, setGeminiModelState] = useState(getGeminiModel)
   const [ollamaModel, setOllamaModelState] = useState(getOllamaModel)
   const [error, setError] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setError('')
+
+    // Client-side format check
     if (provider === 'anthropic') {
       if (!anthropicKey.trim()) { setError('Paste your Anthropic API key.'); return }
       if (!anthropicKey.trim().startsWith('sk-ant-')) { setError('Key should start with sk-ant-'); return }
-      setApiKey(anthropicKey)
     } else if (provider === 'gemini') {
       if (!geminiKey.trim()) { setError('Paste your Gemini API key.'); return }
+    }
+
+    // Ollama needs no key — skip verification
+    if (provider === 'ollama') {
+      setOllamaModel(ollamaModel)
+      setProvider(provider)
+      onSave()
+      return
+    }
+
+    // Verify key against the backend before saving
+    setVerifying(true)
+    try {
+      const key = provider === 'gemini' ? geminiKey : anthropicKey
+      await verifyApiKey(provider, key.trim(), { geminiModel: geminiModel })
+    } catch (err) {
+      setError((err as Error).message || 'Invalid API key')
+      return
+    } finally {
+      setVerifying(false)
+    }
+
+    if (provider === 'anthropic') {
+      setApiKey(anthropicKey)
+    } else {
       setGeminiKey(geminiKey)
       setGeminiModel(geminiModel)
-    } else {
-      setOllamaModel(ollamaModel)
     }
     setProvider(provider)
     onSave()
@@ -167,14 +193,27 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
 
           {/* Actions */}
           <div className="flex gap-2">
-            {onDismiss && (
-              <button onClick={onDismiss} className="flex-1 btn-secondary">Cancel</button>
-            )}
+            <button
+              onClick={onDismiss}
+              disabled={verifying}
+              className="flex-1 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Close
+            </button>
             <button
               onClick={handleSave}
-              className="flex-1 btn-primary"
+              disabled={verifying}
+              className="flex-1 btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save & Continue
+              {verifying ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Verifying…
+                </>
+              ) : 'Save & Continue'}
             </button>
           </div>
         </div>

@@ -183,6 +183,55 @@ async def debug_key(x_api_key: Optional[str] = Header(None)):
     }
 
 
+@app.post("/api/verify-key")
+async def verify_key(
+    x_api_key: Optional[str] = Header(None),
+    x_provider: Optional[str] = Header(None),
+    x_ollama_model: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+):
+    """Validate that the supplied API key works by making a minimal test call."""
+    provider, api_key = resolve_provider(x_provider, x_api_key)
+
+    if provider == "ollama":
+        # No key needed — just confirm Ollama is reachable
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get("http://localhost:11434/api/tags")
+                resp.raise_for_status()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not connect to Ollama at localhost:11434. Is it running?"
+            )
+        return {"ok": True}
+
+    try:
+        await call_llm_text(
+            "Hi",
+            provider=provider,
+            api_key=api_key,
+            ollama_model=x_ollama_model or "gemma3",
+            gemini_model=x_gemini_model or "gemini-2.5-flash",
+            max_tokens=4,
+        )
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 429:
+            # Rate-limited but the key itself is valid
+            return {"ok": True}
+        body = e.response.text[:300]
+        if status in (400, 401, 403):
+            raise HTTPException(status_code=401, detail=f"Invalid API key — authentication failed. ({body})")
+        raise HTTPException(status_code=400, detail=f"Provider returned error {status}: {body}")
+    except anthropic.AuthenticationError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid Anthropic API key — {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Verification failed: {str(e)[:300]}")
+
+    return {"ok": True}
+
+
 def session_dir(session_id: str) -> Path:
     d = UPLOADS_DIR / session_id
     d.mkdir(parents=True, exist_ok=True)
