@@ -26,7 +26,7 @@ import httpx
 import anthropic
 from dotenv import load_dotenv
 
-from audio_processor import transcribe_audio, split_audio_segment, get_model
+from audio_processor import transcribe_audio, transcribe_raw_text, split_audio_segment, get_model
 
 load_dotenv()
 
@@ -86,7 +86,7 @@ async def process_upload_job(
         jobs[job_id]["status"] = "transcribing"
         jobs[job_id]["progress"] = "Running speech recognition…"
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         sentences_raw = await loop.run_in_executor(None, lambda: transcribe_audio(str(audio_path)))
 
         jobs[job_id]["status"] = "segmenting"
@@ -442,10 +442,8 @@ async def transcribe_user_audio(audio: UploadFile = File(...)):
         tmp.write(content)
         tmp_path = tmp.name
     try:
-        loop = asyncio.get_event_loop()
-        model = get_model()
-        result = await loop.run_in_executor(None, lambda: model.transcribe(tmp_path, language="ja", fp16=False))
-        text = result.get("text", "").strip()
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, lambda: transcribe_raw_text(tmp_path))
         return {"text": text}
     except Exception as e:
         logger.error(f"User transcription failed: {e}")

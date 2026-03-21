@@ -1,5 +1,6 @@
 import whisper
 import os
+import threading
 from pydub import AudioSegment
 from typing import List, Dict, Any
 import logging
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 # Options: tiny, base, small, medium, large — larger = more accurate but slower and more RAM.
 _model = None
 _model_name = os.getenv("WHISPER_MODEL", "tiny")
+# Whisper's model is NOT thread-safe — this lock ensures only one transcription
+# runs at a time, preventing tensor corruption when concurrent requests arrive.
+_model_lock = threading.Lock()
 
 def get_model():
     global _model
@@ -30,12 +34,14 @@ def transcribe_audio(audio_path: str) -> List[Dict[str, Any]]:
     model = get_model()
 
     logger.info(f"Transcribing audio: {audio_path}")
-    result = model.transcribe(
-        audio_path,
-        language="ja",
-        word_timestamps=True,
-        verbose=False,
-    )
+    with _model_lock:
+        result = model.transcribe(
+            audio_path,
+            language="ja",
+            word_timestamps=True,
+            verbose=False,
+            fp16=False,
+        )
 
     # Collect all words with timestamps from all segments
     all_words = []
@@ -130,6 +136,18 @@ def transcribe_audio(audio_path: str) -> List[Dict[str, Any]]:
 
     logger.info(f"Produced {len(sentences)} sentence(s) from transcription.")
     return sentences
+
+
+def transcribe_raw_text(audio_path: str) -> str:
+    """
+    Transcribe audio and return the plain text string.
+    Uses the same model lock as transcribe_audio to prevent concurrent
+    access to the Whisper model from multiple threads.
+    """
+    model = get_model()
+    with _model_lock:
+        result = model.transcribe(audio_path, language="ja", fp16=False)
+    return result.get("text", "").strip()
 
 
 def split_audio_segment(
