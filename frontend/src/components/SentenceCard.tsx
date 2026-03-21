@@ -191,8 +191,9 @@ export default function SentenceCard({
       setTranscriptEditable('')
       try {
         const text = await transcribeAudio(blob)
-        setAutoTranscript(text)
-        setTranscriptEditable(text)
+        const trimmed = text.trim()
+        setAutoTranscript(trimmed || null)  // empty string → null (show manual entry fallback)
+        setTranscriptEditable(trimmed)
       } catch {
         setAutoTranscript(null) // null signals fallback to manual entry
       } finally {
@@ -458,12 +459,9 @@ export default function SentenceCard({
                       recordingAudioRef.current?.pause()
                       setPlayingRecording(false)
                     } else {
-                      const audio = new Audio(recordingUrl)
-                      recordingAudioRef.current = audio
-                      audio.onended = () => setPlayingRecording(false)
-                      audio.onerror = () => setPlayingRecording(false)
-                      audio.play().catch(() => setPlayingRecording(false))
-                      setPlayingRecording(true)
+                      recordingAudioRef.current?.play()
+                        .then(() => setPlayingRecording(true))
+                        .catch(() => setPlayingRecording(false))
                     }
                   }}
                   className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-150 active:scale-95 shadow-md
@@ -597,13 +595,10 @@ export default function SentenceCard({
                       if (playingRecording) {
                         recordingAudioRef.current?.pause()
                         setPlayingRecording(false)
-                      } else if (recordingUrl) {
-                        const audio = new Audio(recordingUrl)
-                        recordingAudioRef.current = audio
-                        audio.onended = () => setPlayingRecording(false)
-                        audio.onerror = () => setPlayingRecording(false)
-                        audio.play().catch(() => setPlayingRecording(false))
-                        setPlayingRecording(true)
+                      } else {
+                        recordingAudioRef.current?.play()
+                          .then(() => setPlayingRecording(true))
+                          .catch(() => setPlayingRecording(false))
                       }
                     }}
                     disabled={!recordingUrl}
@@ -729,6 +724,15 @@ export default function SentenceCard({
           </svg>
         </button>
       </div>
+
+      {/* Hidden audio element for recording playback — more reliable than new Audio() on PC */}
+      <audio
+        ref={recordingAudioRef}
+        src={recordingUrl ?? undefined}
+        onEnded={() => setPlayingRecording(false)}
+        onError={() => setPlayingRecording(false)}
+        className="hidden"
+      />
     </div>
   )
 }

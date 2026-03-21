@@ -322,7 +322,7 @@ async def transcribe_user_audio(audio: UploadFile = File(...)):
     try:
         loop = asyncio.get_event_loop()
         model = get_model()
-        result = await loop.run_in_executor(None, lambda: model.transcribe(tmp_path, language="ja"))
+        result = await loop.run_in_executor(None, lambda: model.transcribe(tmp_path, language="ja", fp16=False))
         text = result.get("text", "").strip()
         return {"text": text}
     except Exception as e:
