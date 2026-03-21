@@ -41,6 +41,51 @@ function FuriganaText({ segments }: { segments: FuriganaSegment[] }) {
   )
 }
 
+// ── Mic selector ─────────────────────────────────────────────────────────
+
+interface MicSelectorProps {
+  devices: MediaDeviceInfo[]
+  selectedId: string
+  onSelect: (id: string) => void
+  onEnumerate: () => void
+}
+
+function MicSelector({ devices, selectedId, onSelect, onEnumerate }: MicSelectorProps) {
+  if (devices.length === 0) {
+    return (
+      <button
+        onClick={onEnumerate}
+        className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors"
+        title="Choose microphone"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+        </svg>
+        Choose microphone
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+      </svg>
+      <select
+        value={selectedId}
+        onChange={(e) => onSelect(e.target.value)}
+        className="text-xs bg-transparent text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-500 max-w-[200px] truncate"
+      >
+        {devices.map((d, i) => (
+          <option key={d.deviceId} value={d.deviceId}>
+            {d.label || `Microphone ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
 export default function SentenceCard({
@@ -87,6 +132,10 @@ export default function SentenceCard({
   const [autoTranscript, setAutoTranscript] = useState<string | null>(null)
   const [transcriptEditable, setTranscriptEditable] = useState('')
 
+  // Mic device selection
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedMicId, setSelectedMicId] = useState<string>('')
+
   // Edit mode
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState(sentence.text)
@@ -95,7 +144,23 @@ export default function SentenceCard({
   const audioRefs = useRef<HTMLAudioElement[]>([])
   const recorder = useAudioRecorder()
 
-  // Reset on sentence navigation (id change)
+  // Enumerate microphones when entering record mode
+  useEffect(() => {
+    if (mode !== 'record') return
+    const enumerate = async () => {
+      try {
+        // Request permission so labels are populated (browsers hide labels otherwise)
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        tempStream.getTracks().forEach(t => t.stop())
+        const all = await navigator.mediaDevices.enumerateDevices()
+        const mics = all.filter(d => d.kind === 'audioinput')
+        setMicDevices(mics)
+        // Pre-select the first device only if nothing is selected yet
+        setSelectedMicId(prev => prev || (mics[0]?.deviceId ?? ''))
+      } catch { /* permission denied — no mic selector shown */ }
+    }
+    enumerate()
+  }, [mode])
   useEffect(() => {
     setMode('listen')
     setShowTranscript(true)
@@ -175,7 +240,7 @@ export default function SentenceCard({
     setError(null)
     setRecordingUrl(null)
     setRecorded(false)
-    blobPromiseRef.current = recorder.startRecording()
+    blobPromiseRef.current = recorder.startRecording(selectedMicId || undefined)
   }
 
   const handleStopRecording = async () => {
@@ -577,13 +642,34 @@ export default function SentenceCard({
 
               {/* Phase 1: record button — hide once stopped and reviewed */}
               {!recorded && (
-                <RecordButton
-                  isRecording={recorder.isRecording}
-                  duration={recorder.duration}
-                  onStart={handleStartRecording}
-                  onStop={handleStopRecording}
-                  disabled={analyzing || transcribing}
-                />
+                <div className="flex flex-col items-center gap-3">
+                  <RecordButton
+                    isRecording={recorder.isRecording}
+                    duration={recorder.duration}
+                    onStart={handleStartRecording}
+                    onStop={handleStopRecording}
+                    disabled={analyzing || transcribing}
+                  />
+
+                  {/* Mic selector — shown when multiple mics are available */}
+                  {!recorder.isRecording && (
+                    <MicSelector
+                      devices={micDevices}
+                      selectedId={selectedMicId}
+                      onSelect={setSelectedMicId}
+                      onEnumerate={async () => {
+                        try {
+                          // Request permission first so labels are populated
+                          await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()))
+                          const all = await navigator.mediaDevices.enumerateDevices()
+                          const mics = all.filter(d => d.kind === 'audioinput')
+                          setMicDevices(mics)
+                          if (!selectedMicId && mics.length > 0) setSelectedMicId(mics[0].deviceId)
+                        } catch { /* permission denied — silently ignore */ }
+                      }}
+                    />
+                  )}
+                </div>
               )}
 
               {/* Phase 2: review UI — shown after user stops recording */}

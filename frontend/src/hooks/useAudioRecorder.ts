@@ -19,10 +19,13 @@ export function useAudioRecorder() {
   const resolveRef = useRef<((blob: Blob) => void) | null>(null)
   const rejectRef = useRef<((err: Error) => void) | null>(null)
 
-  const startRecording = useCallback((): Promise<Blob> => {
+  const startRecording = useCallback((deviceId?: string): Promise<Blob> => {
     return new Promise(async (resolve, reject) => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const audioConstraints: MediaStreamConstraints['audio'] = deviceId
+          ? { deviceId: { exact: deviceId } }
+          : true
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
 
         // Prefer webm/opus, fall back to whatever the browser supports
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
