@@ -190,11 +190,14 @@ async def verify_key(
     x_ollama_model: Optional[str] = Header(None),
     x_gemini_model: Optional[str] = Header(None),
 ):
-    """Validate that the supplied API key works by making a minimal test call."""
+    """
+    Validate that the supplied API key is accepted by the provider.
+    Uses the cheapest possible auth-only request and only checks HTTP status —
+    response body is intentionally ignored so there are no parsing failure modes.
+    """
     provider, api_key = resolve_provider(x_provider, x_api_key)
 
     if provider == "ollama":
-        # No key needed — just confirm Ollama is reachable
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get("http://localhost:11434/api/tags")
@@ -206,28 +209,37 @@ async def verify_key(
             )
         return {"ok": True}
 
-    try:
-        await call_llm_text(
-            "Hi",
-            provider=provider,
-            api_key=api_key,
-            ollama_model=x_ollama_model or "gemma3",
-            gemini_model=x_gemini_model or "gemini-2.5-flash",
-            max_tokens=4,
-        )
-    except httpx.HTTPStatusError as e:
-        status = e.response.status_code
-        if status == 429:
-            # Rate-limited but the key itself is valid
+    if provider == "gemini":
+        # List-models is a free, read-only endpoint — HTTP 200 means the key is valid.
+        gemini_model = x_gemini_model or "gemini-2.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params={"key": api_key})
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not reach Google API: {e}")
+        if resp.status_code == 200:
             return {"ok": True}
-        body = e.response.text[:300]
-        if status in (400, 401, 403):
-            raise HTTPException(status_code=401, detail=f"Invalid API key — authentication failed. ({body})")
-        raise HTTPException(status_code=400, detail=f"Provider returned error {status}: {body}")
-    except anthropic.AuthenticationError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Anthropic API key — {e}")
+        if resp.status_code == 429:
+            return {"ok": True}  # rate-limited but key is valid
+        if resp.status_code in (400, 401, 403):
+            raise HTTPException(status_code=401, detail="Invalid Gemini API key — authentication failed.")
+        raise HTTPException(status_code=400, detail=f"Google API returned {resp.status_code}.")
+
+    # Anthropic — send the smallest possible billable request (1 token)
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1,
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+    except anthropic.AuthenticationError:
+        raise HTTPException(status_code=401, detail="Invalid Anthropic API key — authentication failed.")
+    except anthropic.RateLimitError:
+        return {"ok": True}  # rate-limited but key is valid
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Verification failed: {str(e)[:300]}")
+        raise HTTPException(status_code=400, detail=f"Anthropic verification failed: {str(e)[:200]}")
 
     return {"ok": True}
 
