@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   getProvider, setProvider,
   getApiKey, setApiKey,
@@ -7,6 +7,7 @@ import {
   getOllamaModel, setOllamaModel,
   ollamaEnabled,
   verifyApiKey,
+  setKeyVerified,
   type Provider,
 } from '../lib/api'
 
@@ -31,30 +32,41 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
   const [error, setError] = useState('')
   const [verifying, setVerifying] = useState(false)
 
+  // Invalidate the verified flag as soon as the modal opens — the user
+  // must re-verify before AI features become available again.
+  useEffect(() => { setKeyVerified(false) }, [])
+
   const handleSave = async () => {
     setError('')
 
-    // Client-side format check
-    if (provider === 'anthropic') {
-      if (!anthropicKey.trim()) { setError('Paste your Anthropic API key.'); return }
-      if (!anthropicKey.trim().startsWith('sk-ant-')) { setError('Key should start with sk-ant-'); return }
-    } else if (provider === 'gemini') {
-      if (!geminiKey.trim()) { setError('Paste your Gemini API key.'); return }
-    }
-
-    // Ollama needs no key — skip verification
+    // Ollama needs no key — accept immediately
     if (provider === 'ollama') {
       setOllamaModel(ollamaModel)
       setProvider(provider)
+      setKeyVerified(true)
       onSave()
+      return
+    }
+
+    // Soft check: if key field is empty just tell the user, don't hard-block
+    const key = provider === 'gemini' ? geminiKey.trim() : anthropicKey.trim()
+    if (!key) {
+      setError(
+        provider === 'anthropic'
+          ? 'Paste your Anthropic API key (starts with sk-ant-).'
+          : 'Paste your Gemini API key (starts with AIza).'
+      )
+      return
+    }
+    if (provider === 'anthropic' && !key.startsWith('sk-ant-')) {
+      setError('Anthropic keys should start with sk-ant-')
       return
     }
 
     // Verify key against the backend before saving
     setVerifying(true)
     try {
-      const key = provider === 'gemini' ? geminiKey : anthropicKey
-      await verifyApiKey(provider, key.trim(), { geminiModel: geminiModel })
+      await verifyApiKey(provider, key, { geminiModel })
     } catch (err) {
       setError((err as Error).message || 'Invalid API key')
       return
@@ -63,12 +75,13 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
     }
 
     if (provider === 'anthropic') {
-      setApiKey(anthropicKey)
+      setApiKey(key)
     } else {
-      setGeminiKey(geminiKey)
+      setGeminiKey(key)
       setGeminiModel(geminiModel)
     }
     setProvider(provider)
+    setKeyVerified(true)
     onSave()
   }
 

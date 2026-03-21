@@ -54,12 +54,20 @@ export function setGeminiModel(model: string) {
   localStorage.setItem('gemini_model', model.trim() || 'gemini-2.5-flash')
 }
 
-/** Returns true if the current provider has the credentials it needs. */
+/** Returns true if the stored key has been successfully verified against the backend. */
+export function isKeyVerified(): boolean {
+  return localStorage.getItem('ai_key_verified') === 'true'
+}
+export function setKeyVerified(verified: boolean) {
+  localStorage.setItem('ai_key_verified', verified ? 'true' : 'false')
+}
+
+/** Returns true if the current provider has verified credentials. */
 export function isConfigured(): boolean {
   const p = getProvider()
   if (p === 'ollama') return true
-  if (p === 'gemini') return !!getGeminiKey()
-  return !!getApiKey()
+  if (p === 'gemini') return !!getGeminiKey() && isKeyVerified()
+  return !!getApiKey() && isKeyVerified()
 }
 
 // ── Request headers ─────────────────────────────────────────────────────
