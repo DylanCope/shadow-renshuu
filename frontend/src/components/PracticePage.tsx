@@ -24,7 +24,8 @@ export default function PracticePage({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [progress, setProgress] = useState<Record<number, SentenceProgress>>({})
   const [showMulti, setShowMulti] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Start open on desktop (lg = 1024px), closed on mobile so it doesn't cover content
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024)
   const [showFurigana, setShowFurigana] = useState(false)
 
   const { session_id } = session
@@ -203,20 +204,41 @@ export default function PracticePage({
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+        {/* Mobile backdrop — closes sidebar on tap-outside */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar — fixed overlay on mobile, inline collapse on desktop */}
         <aside
           className={`
-            flex-shrink-0 flex flex-col
+            fixed inset-y-0 left-0 z-50 flex-shrink-0 flex flex-col w-72
             border-r border-gray-200 dark:border-gray-800
             bg-white dark:bg-gray-900
             transition-all duration-300
-            ${sidebarOpen ? 'w-72' : 'w-0 overflow-hidden'}
+            lg:relative lg:inset-auto lg:z-auto
+            ${sidebarOpen
+              ? 'translate-x-0 lg:w-72'
+              : '-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden'
+            }
           `}
         >
-          <div className="px-3 py-3 border-b border-gray-100 dark:border-gray-800">
+          <div className="px-3 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Sentences
             </p>
+            {/* Close button — mobile only */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -230,7 +252,7 @@ export default function PracticePage({
               return (
                 <div key={s.id}>
                   <button
-                    onClick={() => setCurrentIndex(i)}
+                    onClick={() => { setCurrentIndex(i); setSidebarOpen(false) }}
                     className={`
                       w-full text-left px-3 py-2.5 transition-colors duration-100
                       flex items-start gap-2.5

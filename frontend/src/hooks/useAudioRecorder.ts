@@ -45,9 +45,10 @@ export function useAudioRecorder() {
 
         recorder.onstop = () => {
           stream.getTracks().forEach((t) => t.stop())
-          const blob = new Blob(chunksRef.current, {
-            type: mimeType || 'audio/webm',
-          })
+          // Use the recorder's actual mimeType — on iOS Safari the browser picks
+          // audio/mp4 and mimeType (our preferred webm) is '' from isTypeSupported.
+          const actualType = recorder.mimeType || mimeType || 'audio/webm'
+          const blob = new Blob(chunksRef.current, { type: actualType })
           resolveRef.current?.(blob)
 
           if (timerRef.current) {

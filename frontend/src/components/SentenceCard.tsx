@@ -112,6 +112,8 @@ export default function SentenceCard({
     setPlayingRecording(false)
     setAutoTranscript(null)
     setTranscriptEditable('')
+    setTranscribing(false)
+    setAnalyzing(false)
     blobPromiseRef.current = null
     audioRefs.current.forEach((a) => { a.pause(); a.currentTime = 0 })
   }, [sentence.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -454,7 +456,8 @@ export default function SentenceCard({
                       const audio = new Audio(recordingUrl)
                       recordingAudioRef.current = audio
                       audio.onended = () => setPlayingRecording(false)
-                      audio.play()
+                      audio.onerror = () => setPlayingRecording(false)
+                      audio.play().catch(() => setPlayingRecording(false))
                       setPlayingRecording(true)
                     }
                   }}
@@ -593,7 +596,8 @@ export default function SentenceCard({
                         const audio = new Audio(recordingUrl)
                         recordingAudioRef.current = audio
                         audio.onended = () => setPlayingRecording(false)
-                        audio.play()
+                        audio.onerror = () => setPlayingRecording(false)
+                        audio.play().catch(() => setPlayingRecording(false))
                         setPlayingRecording(true)
                       }
                     }}
