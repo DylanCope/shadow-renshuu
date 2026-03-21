@@ -7,7 +7,8 @@ import logging
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+import time
+from typing import Optional, Any
 
 # Fix Windows console Unicode encoding (cp1252 can't handle Japanese)
 if sys.platform == "win32":
@@ -60,6 +61,79 @@ app.add_middleware(
 
 UPLOADS_DIR = Path(__file__).parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ─────────────────────────────────────────────
+# In-memory job store for async upload processing
+# ─────────────────────────────────────────────
+
+# jobs[job_id] = {"status": "pending"|"transcribing"|"segmenting"|"done"|"error",
+#                 "progress": str, "result": dict|None, "error": str|None, "ts": float}
+jobs: dict[str, dict[str, Any]] = {}
+
+JOB_TTL = 3600  # seconds before completed/failed jobs are evicted
+
+
+async def process_upload_job(
+    job_id: str,
+    session_id: str,
+    audio_path: Path,
+    audio_filename: str,
+    transcript: Optional[str],
+    sdir: Path,
+):
+    """Run Whisper + segmentation in the background and store the result in `jobs`."""
+    try:
+        jobs[job_id]["status"] = "transcribing"
+        jobs[job_id]["progress"] = "Running speech recognition…"
+
+        loop = asyncio.get_event_loop()
+        sentences_raw = await loop.run_in_executor(None, lambda: transcribe_audio(str(audio_path)))
+
+        jobs[job_id]["status"] = "segmenting"
+        jobs[job_id]["progress"] = "Splitting audio into sentences…"
+
+        if transcript and transcript.strip():
+            user_lines = parse_provided_transcript(transcript)
+            for i, line in enumerate(user_lines):
+                if i < len(sentences_raw):
+                    sentences_raw[i]["text"] = line
+                else:
+                    last_end = sentences_raw[-1]["end"] if sentences_raw else 0.0
+                    sentences_raw.append({"text": line, "start": last_end, "end": last_end + 3.0})
+
+        sentences_out = []
+        for idx, s in enumerate(sentences_raw):
+            try:
+                seg_filename = split_audio_segment(
+                    str(sdir), str(audio_path), s["start"], s["end"], idx
+                )
+            except Exception as e:
+                logger.warning(f"Could not split segment {idx}: {e}")
+                seg_filename = audio_filename
+
+            sentences_out.append({
+                "id": idx,
+                "text": s["text"],
+                "start": s["start"],
+                "end": s["end"],
+                "segmentUrl": f"/api/audio/{session_id}/{seg_filename}",
+            })
+
+        jobs[job_id].update({
+            "status": "done",
+            "progress": "Done!",
+            "result": {
+                "session_id": session_id,
+                "sentences": sentences_out,
+                "audioUrl": f"/api/audio/{session_id}/{audio_filename}",
+            },
+            "ts": time.time(),
+        })
+        logger.info(f"Job {job_id} completed ({len(sentences_out)} sentences)")
+
+    except Exception as e:
+        logger.error(f"Job {job_id} failed: {e}")
+        jobs[job_id].update({"status": "error", "error": str(e), "ts": time.time()})
 
 # ─────────────────────────────────────────────
 # Request / Response models
@@ -273,11 +347,13 @@ async def upload_audio(
 ):
     """
     Accept audio file + optional transcript text.
-    Runs Whisper to get sentence-level timestamps.
-    Pre-generates all sentence audio segments.
-    Returns session_id, sentences list, audioUrl.
+    Saves the file immediately and returns a job_id.
+    Processing (Whisper + segmentation) runs in the background so the
+    client can poll /api/status/{job_id} rather than holding one long
+    connection open (which mobile browsers kill when backgrounded).
     """
     session_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
     sdir = session_dir(session_id)
 
     # Save uploaded audio
@@ -289,58 +365,36 @@ async def upload_audio(
         content = await audio.read()
         await f.write(content)
 
-    logger.info(f"Saved upload to {audio_path} (session {session_id})")
+    logger.info(f"Saved upload to {audio_path} (session {session_id}, job {job_id})")
 
-    # Transcribe with Whisper (always, to get timestamps)
-    try:
-        sentences_raw = transcribe_audio(str(audio_path))
-    except Exception as e:
-        logger.error(f"Transcription failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    # Register job and kick off background processing
+    jobs[job_id] = {"status": "pending", "progress": "Starting…", "result": None, "error": None, "ts": time.time()}
+    asyncio.create_task(process_upload_job(job_id, session_id, audio_path, audio_filename, transcript, sdir))
 
-    # If user provided a transcript, try to merge text (keep Whisper timestamps)
-    if transcript and transcript.strip():
-        user_lines = parse_provided_transcript(transcript)
-        # Override Whisper text with user-provided lines where indices match
-        for i, line in enumerate(user_lines):
-            if i < len(sentences_raw):
-                sentences_raw[i]["text"] = line
-            else:
-                # Extra user lines: append with dummy timing at end of audio
-                last_end = sentences_raw[-1]["end"] if sentences_raw else 0.0
-                sentences_raw.append({
-                    "text": line,
-                    "start": last_end,
-                    "end": last_end + 3.0,
-                })
+    return JSONResponse({"job_id": job_id})
 
-    # Pre-generate audio segments for each sentence
-    sentences_out = []
-    for idx, s in enumerate(sentences_raw):
-        try:
-            seg_filename = split_audio_segment(
-                str(sdir),
-                str(audio_path),
-                s["start"],
-                s["end"],
-                idx,
-            )
-        except Exception as e:
-            logger.warning(f"Could not split segment {idx}: {e}")
-            seg_filename = audio_filename  # fallback to full audio
 
-        sentences_out.append({
-            "id": idx,
-            "text": s["text"],
-            "start": s["start"],
-            "end": s["end"],
-            "segmentUrl": f"/api/audio/{session_id}/{seg_filename}",
-        })
+@app.get("/api/status/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Poll the status of an upload+processing job.
+    Returns {status, progress, result?, error?}.
+    Evicts old completed/failed jobs that exceed JOB_TTL.
+    """
+    # Opportunistically clean up expired jobs
+    now = time.time()
+    expired = [jid for jid, j in jobs.items() if j["status"] in ("done", "error") and now - j.get("ts", now) > JOB_TTL]
+    for jid in expired:
+        jobs.pop(jid, None)
 
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
     return JSONResponse({
-        "session_id": session_id,
-        "sentences": sentences_out,
-        "audioUrl": f"/api/audio/{session_id}/{audio_filename}",
+        "status": job["status"],
+        "progress": job.get("progress", ""),
+        "result": job.get("result"),
+        "error": job.get("error"),
     })
 
 

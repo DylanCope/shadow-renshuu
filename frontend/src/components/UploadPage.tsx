@@ -59,27 +59,14 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
     if (!file) return
     setLoading(true)
     setError(null)
-
-    const msgs = [
-      'Uploading audio…',
-      'Running Whisper transcription (this may take a minute)…',
-      'Segmenting sentences…',
-      'Almost ready…',
-    ]
-    let i = 0
-    setLoadingMsg(msgs[i])
-    const msgInterval = setInterval(() => {
-      i = Math.min(i + 1, msgs.length - 1)
-      setLoadingMsg(msgs[i])
-    }, 8000)
+    setLoadingMsg('Uploading audio…')
 
     try {
-      const session = await uploadAudio(file, transcript || undefined)
+      const session = await uploadAudio(file, transcript || undefined, (msg) => setLoadingMsg(msg))
       onSession(session)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
-      clearInterval(msgInterval)
       setLoading(false)
     }
   }
