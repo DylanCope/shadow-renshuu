@@ -12,7 +12,7 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { Session } from '../types'
+import type { Session, SentenceProgress } from '../types'
 
 export interface StoredSession {
   id: string
@@ -21,6 +21,7 @@ export interface StoredSession {
   title: string
   sentences: Session['sentences']
   audioUrl: string
+  progress: Record<number, SentenceProgress>
   createdAt: Date
 }
 
@@ -35,6 +36,7 @@ export async function saveSession(
     title: title || session.sentences[0]?.text?.slice(0, 60) || 'Untitled session',
     sentences: session.sentences,
     audioUrl: session.audioUrl,
+    progress: {},
     createdAt: serverTimestamp(),
   })
   return docRef.id
@@ -59,6 +61,7 @@ export async function getUserSessions(userId: string): Promise<StoredSession[]> 
       title: data.title,
       sentences: data.sentences,
       audioUrl: data.audioUrl,
+      progress: data.progress ?? {},
       createdAt: ts != null ? ts.toDate() : new Date(),
     } as StoredSession
   })
@@ -73,4 +76,11 @@ export async function updateSessionSentences(
   sentences: Session['sentences'],
 ): Promise<void> {
   await updateDoc(doc(db, 'sessions', sessionDocId), { sentences })
+}
+
+export async function updateSessionProgress(
+  sessionDocId: string,
+  progress: Record<number, SentenceProgress>,
+): Promise<void> {
+  await updateDoc(doc(db, 'sessions', sessionDocId), { progress })
 }

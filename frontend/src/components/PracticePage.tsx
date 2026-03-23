@@ -4,12 +4,13 @@ import MultiSentenceMode from './MultiSentenceMode'
 import ProgressTracker from './ProgressTracker'
 import ThemeToggle from './ThemeToggle'
 import { isConfigured } from '../lib/api'
-import { updateSessionSentences } from '../lib/firestoreSessions'
+import { updateSessionSentences, updateSessionProgress } from '../lib/firestoreSessions'
 import type { Session, Sentence, SentenceProgress, AnalysisResult, FuriganaSegment } from '../types'
 
 interface PracticePageProps {
   session: Session
   firestoreDocId?: string | null
+  initialProgress?: Record<number, SentenceProgress>
   darkMode: boolean
   onThemeToggle: () => void
   onNewSession: () => void
@@ -19,6 +20,7 @@ interface PracticePageProps {
 export default function PracticePage({
   session,
   firestoreDocId,
+  initialProgress = {},
   darkMode,
   onThemeToggle,
   onNewSession,
@@ -26,7 +28,7 @@ export default function PracticePage({
 }: PracticePageProps) {
   const [sentences, setSentences] = useState<Sentence[]>(session.sentences)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [progress, setProgress] = useState<Record<number, SentenceProgress>>({})
+  const [progress, setProgress] = useState<Record<number, SentenceProgress>>(initialProgress)
   const [showMulti, setShowMulti] = useState(false)
   // Start open on desktop (lg = 1024px), closed on mobile so it doesn't cover content
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024)
@@ -287,7 +289,7 @@ export default function PracticePage({
               return (
                 <div key={s.id}>
                   <button
-                    onClick={() => { setCurrentIndex(i); setSidebarOpen(false) }}
+                    onClick={() => { setCurrentIndex(i); if (window.innerWidth < 1024) setSidebarOpen(false) }}
                     className={`
                       w-full text-left px-3 py-2.5 transition-colors duration-100
                       flex items-start gap-2.5

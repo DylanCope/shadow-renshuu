@@ -125,15 +125,14 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
             Japanese Shadowing Practice
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-lg max-w-xl mx-auto leading-relaxed">
-            Upload a native speaker audio file to start shadowing practice with
-            AI-powered pronunciation feedback.
+            Upload a native speaker audio file to start shadowing practice with AI-powered feedback.
           </p>
         </div>
 
         {/* Upload card */}
         <div className="card p-6 shadow-sm mb-6">
           <h2 className="font-semibold text-base mb-4 text-gray-700 dark:text-gray-300">
-            1. Upload Audio
+            Upload Audio
           </h2>
 
           <div
@@ -201,7 +200,7 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
         {/* Transcript card */}
         <div className="card p-6 shadow-sm mb-6">
           <h2 className="font-semibold text-base mb-1 text-gray-700 dark:text-gray-300">
-            2. Transcript{' '}
+            Transcript{' '}
             <span className="font-normal text-gray-400 dark:text-gray-500 text-sm">(optional)</span>
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">

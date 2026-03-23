@@ -5,18 +5,20 @@ import ApiKeyModal from './components/ApiKeyModal'
 import LoginPage from './components/LoginPage'
 import { useTheme } from './hooks/useTheme'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import type { Session } from './types'
+import type { Session, SentenceProgress } from './types'
 
 function AppContent() {
   const [session, setSession] = useState<Session | null>(null)
   const [sessionDocId, setSessionDocId] = useState<string | null>(null)
+  const [initialProgress, setInitialProgress] = useState<Record<number, SentenceProgress>>({})
   const { darkMode, toggle } = useTheme()
   const [showKeyModal, setShowKeyModal] = useState(false)
   const { user, loading } = useAuth()
 
-  const handleSession = (s: Session, docId?: string) => {
+  const handleSession = (s: Session, docId?: string, progress?: Record<number, SentenceProgress>) => {
     setSession(s)
     setSessionDocId(docId ?? null)
+    setInitialProgress(progress ?? {})
   }
 
   if (loading) {
@@ -40,6 +42,7 @@ function AppContent() {
         <PracticePage
           session={session}
           firestoreDocId={sessionDocId}
+          initialProgress={initialProgress}
           darkMode={darkMode}
           onThemeToggle={toggle}
           onNewSession={() => { setSession(null); setSessionDocId(null) }}
