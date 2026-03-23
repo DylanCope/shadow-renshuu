@@ -5,6 +5,8 @@ import {
   getGeminiKey, setGeminiKey,
   getGeminiModel, setGeminiModel,
   getOllamaModel, setOllamaModel,
+  getWhisperModel, setWhisperModel,
+  getLlmCorrection, setLlmCorrection,
   ollamaEnabled,
   verifyApiKey,
   setKeyVerified,
@@ -29,6 +31,8 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
   const [geminiKey, setGeminiKeyState] = useState(getGeminiKey)
   const [geminiModel, setGeminiModelState] = useState(getGeminiModel)
   const [ollamaModel, setOllamaModelState] = useState(getOllamaModel)
+  const [whisperModel, setWhisperModelState] = useState(getWhisperModel)
+  const [llmCorrection, setLlmCorrectionState] = useState(getLlmCorrection)
   const [error, setError] = useState('')
   const [verifying, setVerifying] = useState(false)
 
@@ -40,6 +44,10 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
     setError('')
 
     // Ollama needs no key — accept immediately
+    // Always persist transcription settings regardless of provider
+    setWhisperModel(whisperModel)
+    setLlmCorrection(llmCorrection)
+
     if (provider === 'ollama') {
       setOllamaModel(ollamaModel)
       setProvider(provider)
@@ -201,6 +209,44 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
               </p>
             </div>
           )}
+
+          {/* Transcription Settings */}
+          <div className="space-y-3 pt-1 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Transcription</p>
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Whisper model size</label>
+              <select
+                value={whisperModel}
+                onChange={(e) => setWhisperModelState(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700
+                           bg-gray-50 dark:bg-gray-800 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="tiny">tiny — fastest, least accurate</option>
+                <option value="base">base — fast, decent accuracy (default)</option>
+                <option value="small">small — good balance</option>
+                <option value="medium">medium — more accurate, slower</option>
+                <option value="large">large — most accurate, slowest</option>
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Larger models improve transcription quality but increase processing time. The backend must have the model downloaded.
+              </p>
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={llmCorrection}
+                onChange={(e) => setLlmCorrectionState(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-sm">
+                <span className="font-medium text-gray-700 dark:text-gray-300">AI transcript correction</span>
+                <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  After Whisper finishes, ask the AI to review and fix likely transcription errors (e.g. wrong kanji). Requires an AI provider to be configured above.
+                </span>
+              </span>
+            </label>
+          </div>
 
           {error && <p className="text-xs text-red-500">{error}</p>}
 

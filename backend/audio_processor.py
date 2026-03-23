@@ -6,28 +6,28 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Load Whisper model once at module level.
-# Model size is configurable via the WHISPER_MODEL env var (default: 'tiny').
+# Load Whisper models on demand; cache by model name.
+# Default model is configurable via the WHISPER_MODEL env var (default: 'base').
 # Options: tiny, base, small, medium, large — larger = more accurate but slower and more RAM.
-_model = None
-_model_name = os.getenv("WHISPER_MODEL", "tiny")
+_models: dict = {}
+_default_model_name = os.getenv("WHISPER_MODEL", "base")
 
-def get_model():
-    global _model
-    if _model is None:
-        logger.info(f"Loading Whisper model '{_model_name}'...")
-        _model = whisper.load_model(_model_name)
-        logger.info("Whisper model loaded.")
-    return _model
+def get_model(model_name: str = None):
+    name = model_name or _default_model_name
+    if name not in _models:
+        logger.info(f"Loading Whisper model '{name}'...")
+        _models[name] = whisper.load_model(name)
+        logger.info(f"Whisper model '{name}' loaded.")
+    return _models[name]
 
 
-def transcribe_audio(audio_path: str) -> List[Dict[str, Any]]:
+def transcribe_audio(audio_path: str, model_name: str = None) -> List[Dict[str, Any]]:
     """
     Transcribe audio using Whisper with word-level timestamps.
     Groups words into sentences by Japanese punctuation or pauses > 0.8s.
     Returns list of {text, start, end} dicts.
     """
-    model = get_model()
+    model = get_model(model_name)
 
     logger.info(f"Transcribing audio: {audio_path}")
     result = model.transcribe(

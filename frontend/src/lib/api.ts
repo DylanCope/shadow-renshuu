@@ -41,6 +41,20 @@ export function setOllamaModel(model: string) {
   localStorage.setItem('ollama_model', model.trim() || 'gemma3')
 }
 
+export function getWhisperModel(): string {
+  return localStorage.getItem('whisper_model') ?? 'base'
+}
+export function setWhisperModel(model: string) {
+  localStorage.setItem('whisper_model', model.trim() || 'base')
+}
+
+export function getLlmCorrection(): boolean {
+  return localStorage.getItem('llm_correction') === 'true'
+}
+export function setLlmCorrection(enabled: boolean) {
+  localStorage.setItem('llm_correction', enabled ? 'true' : 'false')
+}
+
 export function getGeminiModel(): string {
   const stored = localStorage.getItem('gemini_model')
   // Migrate away from removed/restricted models
@@ -98,6 +112,8 @@ export async function uploadAudio(
   if (transcript && transcript.trim()) {
     form.append('transcript', transcript.trim())
   }
+  form.append('whisper_model', getWhisperModel())
+  form.append('llm_correction', getLlmCorrection() ? 'true' : 'false')
 
   onProgress?.('Uploading audio…')
   const uploadRes = await fetch(`${BASE_URL}/upload`, {

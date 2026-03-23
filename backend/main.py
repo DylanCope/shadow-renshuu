@@ -97,11 +97,11 @@ def upload_to_firebase(local_path: Path, dest_path: str) -> Optional[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Pre-load the Whisper model at startup so the first request isn't slow
+    # Pre-load the default Whisper model at startup so the first request isn't slow
     # and Railway's health check doesn't time out waiting.
     init_firebase()
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, get_model)
+    await loop.run_in_executor(None, lambda: get_model(None))
     yield
 
 
@@ -139,9 +139,15 @@ def _run_job_thread(
     audio_filename: str,
     transcript: Optional[str],
     sdir: Path,
+    whisper_model: Optional[str] = None,
+    llm_correction: bool = False,
+    llm_provider: str = "anthropic",
+    llm_api_key: str = "",
+    ollama_model: str = "gemma3",
+    gemini_model: str = "gemini-2.5-flash",
 ):
     """
-    Run Whisper + segmentation in a dedicated background thread.
+    Run Whisper + optional LLM correction + segmentation in a dedicated background thread.
     Using a plain thread (not the asyncio executor) keeps the event loop
     completely free to handle status-poll requests while Whisper runs.
     """
@@ -149,7 +155,7 @@ def _run_job_thread(
         jobs[job_id]["status"] = "transcribing"
         jobs[job_id]["progress"] = "Running speech recognition…"
 
-        sentences_raw = transcribe_audio(str(audio_path))
+        sentences_raw = transcribe_audio(str(audio_path), model_name=whisper_model)
 
         jobs[job_id]["status"] = "segmenting"
         jobs[job_id]["progress"] = "Splitting audio into sentences…"
@@ -162,6 +168,24 @@ def _run_job_thread(
                 else:
                     last_end = sentences_raw[-1]["end"] if sentences_raw else 0.0
                     sentences_raw.append({"text": line, "start": last_end, "end": last_end + 3.0})
+        elif llm_correction and llm_api_key and sentences_raw:
+            # LLM correction only runs when no user-provided transcript overrides the output
+            jobs[job_id]["progress"] = "Checking transcript with AI…"
+            try:
+                corrections = asyncio.run(
+                    get_llm_corrections(
+                        sentences_raw,
+                        provider=llm_provider,
+                        api_key=llm_api_key,
+                        ollama_model=ollama_model,
+                        gemini_model=gemini_model,
+                    )
+                )
+                if corrections:
+                    sentences_raw = apply_llm_corrections(sentences_raw, corrections)
+                    logger.info(f"Job {job_id}: applied {len(corrections)} LLM correction(s)")
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: LLM correction failed (continuing): {exc}")
 
         # Upload original audio to Firebase Storage (best-effort)
         firebase_audio_url = upload_to_firebase(
@@ -411,6 +435,94 @@ def parse_provided_transcript(transcript_text: str):
     return lines  # caller decides what to do with it
 
 
+async def get_llm_corrections(
+    sentences: list,
+    *,
+    provider: str,
+    api_key: str,
+    ollama_model: str = "gemma3",
+    gemini_model: str = "gemini-2.5-flash",
+) -> list:
+    """Ask the LLM to identify transcription errors and return a list of corrections.
+
+    Each correction is a dict: {i, target, replace, confidence}.
+    `i` is the 0-based index of which occurrence of `target` to replace.
+    Only corrections with confidence >= 85 are intended to be applied.
+    """
+    full_text = "\n".join(s["text"] for s in sentences)
+    prompt = (
+        "You are a Japanese language expert reviewing an automatic speech recognition (ASR) transcript. "
+        "Whisper may have misheard kanji or produced phonetically similar but incorrect words.\n\n"
+        "Transcript (one sentence per line):\n"
+        f"{full_text}\n\n"
+        "Identify clear ASR transcription errors. Return a JSON array of corrections:\n"
+        '[\n  {"i": 0, "target": "wrong text", "replace": "correct text", "confidence": 95},\n  ...\n]\n\n'
+        "Where:\n"
+        '- "i": 0-based index of which occurrence of "target" appears across the full transcript\n'
+        '- "target": the exact wrong text as it appears in the transcript\n'
+        '- "replace": the correct text to substitute\n'
+        '- "confidence": integer 0-100\n\n'
+        "Return ONLY the JSON array. If no corrections are needed, return [].\n"
+        "Only include corrections where confidence >= 85.\n"
+        "Do not make stylistic changes — only fix likely ASR errors."
+    )
+    raw = await call_llm_text(
+        prompt,
+        provider=provider,
+        api_key=api_key,
+        ollama_model=ollama_model,
+        gemini_model=gemini_model,
+        max_tokens=1024,
+        json_mode=(provider == "gemini"),
+    )
+    raw = raw.strip()
+    # Strip markdown code fences if the model wrapped the JSON
+    if raw.startswith("```"):
+        import re as _re
+        raw = _re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = _re.sub(r"\s*```$", "", raw.strip())
+    return json.loads(raw)
+
+
+def apply_llm_corrections(sentences: list, corrections: list, threshold: int = 85) -> list:
+    """Apply LLM corrections to sentence texts.
+
+    Sentences are joined with newline separators so that sentence boundaries are
+    preserved: corrections applied to the full string are re-split back to the
+    original per-sentence slots.
+    """
+    sentences = [dict(s) for s in sentences]
+    separator = "\n"
+    full_text = separator.join(s["text"] for s in sentences)
+
+    for correction in corrections:
+        if correction.get("confidence", 0) < threshold:
+            continue
+        target = correction.get("target", "")
+        replace = correction.get("replace", "")
+        occurrence_idx = int(correction.get("i", 0))
+        if not target:
+            continue
+
+        count = 0
+        pos = 0
+        while True:
+            found = full_text.find(target, pos)
+            if found == -1:
+                break
+            if count == occurrence_idx:
+                full_text = full_text[:found] + replace + full_text[found + len(target):]
+                break
+            count += 1
+            pos = found + len(target)
+
+    corrected_texts = full_text.split(separator)
+    for i, s in enumerate(sentences):
+        if i < len(corrected_texts):
+            s["text"] = corrected_texts[i]
+    return sentences
+
+
 # ─────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────
@@ -419,6 +531,12 @@ def parse_provided_transcript(transcript_text: str):
 async def upload_audio(
     audio: UploadFile = File(...),
     transcript: Optional[str] = Form(None),
+    whisper_model: Optional[str] = Form(None),
+    llm_correction: Optional[str] = Form(None),
+    x_api_key: Optional[str] = Header(None),
+    x_provider: Optional[str] = Header(None),
+    x_ollama_model: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
 ):
     """
     Accept audio file + optional transcript text.
@@ -430,6 +548,21 @@ async def upload_audio(
     session_id = str(uuid.uuid4())
     job_id = str(uuid.uuid4())
     sdir = session_dir(session_id)
+
+    # Validate and normalise the requested whisper model name
+    VALID_WHISPER_MODELS = {"tiny", "base", "small", "medium", "large"}
+    requested_model = (whisper_model or "").strip().lower() or None
+    if requested_model and requested_model not in VALID_WHISPER_MODELS:
+        raise HTTPException(status_code=400, detail=f"Invalid whisper_model '{requested_model}'. Must be one of: {', '.join(sorted(VALID_WHISPER_MODELS))}.")
+
+    # Resolve LLM params for optional transcript correction
+    want_correction = (llm_correction or "").lower() == "true"
+    provider = (x_provider or "anthropic").lower()
+    api_key = x_api_key or ""
+    if provider == "gemini":
+        api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+    elif provider == "anthropic":
+        api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
 
     # Save uploaded audio
     original_ext = Path(audio.filename).suffix or ".audio"
@@ -443,12 +576,18 @@ async def upload_audio(
     logger.info(f"Saved upload to {audio_path} (session {session_id}, job {job_id})")
 
     # Register job and kick off background processing in a dedicated thread.
-    # A plain thread keeps the asyncio event loop completely free to handle
-    # status-poll requests while Whisper (CPU-bound) runs.
     jobs[job_id] = {"status": "pending", "progress": "Starting…", "result": None, "error": None, "ts": time.time()}
     t = threading.Thread(
         target=_run_job_thread,
         args=(job_id, session_id, audio_path, audio_filename, transcript, sdir),
+        kwargs={
+            "whisper_model": requested_model,
+            "llm_correction": want_correction,
+            "llm_provider": provider,
+            "llm_api_key": api_key,
+            "ollama_model": x_ollama_model or "gemma3",
+            "gemini_model": x_gemini_model or "gemini-2.5-flash",
+        },
         daemon=True,
     )
     t.start()
