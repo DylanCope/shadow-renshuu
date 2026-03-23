@@ -58,7 +58,23 @@ export default function PracticePage({
     }
   }, [sentences, firestoreDocId])
 
-  // ── sentence mutations ──────────────────────────────────────────────────
+  const progressSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isFirstProgressRender = useRef(true)
+
+  useEffect(() => {
+    if (isFirstProgressRender.current) {
+      isFirstProgressRender.current = false
+      return
+    }
+    if (!firestoreDocId) return
+    if (progressSaveTimeoutRef.current) clearTimeout(progressSaveTimeoutRef.current)
+    progressSaveTimeoutRef.current = setTimeout(() => {
+      updateSessionProgress(firestoreDocId, progress).catch(console.error)
+    }, 1500)
+    return () => {
+      if (progressSaveTimeoutRef.current) clearTimeout(progressSaveTimeoutRef.current)
+    }
+  }, [progress, firestoreDocId])
 
   const updateSentenceText = (id: number, newText: string) => {
     setSentences((prev) => prev.map((s) => (s.id === id ? { ...s, text: newText } : s)))
@@ -289,7 +305,7 @@ export default function PracticePage({
               return (
                 <div key={s.id}>
                   <button
-                    onClick={() => { setCurrentIndex(i); if (window.innerWidth < 1024) setSidebarOpen(false) }}
+                    onClick={() => { setCurrentIndex(i); if (!window.matchMedia('(min-width: 1024px)').matches) setSidebarOpen(false) }}
                     className={`
                       w-full text-left px-3 py-2.5 transition-colors duration-100
                       flex items-start gap-2.5

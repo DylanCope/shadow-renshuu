@@ -5,12 +5,12 @@ import { uploadAudio } from '../lib/api'
 import { saveSession } from '../lib/firestoreSessions'
 import { auth } from '../lib/firebase'
 import { signOut } from 'firebase/auth'
-import type { Session } from '../types'
+import type { Session, SentenceProgress } from '../types'
 
 interface UploadPageProps {
   darkMode: boolean
   onThemeToggle: () => void
-  onSession: (session: Session, docId?: string) => void
+  onSession: (session: Session, docId?: string, progress?: Record<number, SentenceProgress>) => void
   onChangeApiKey: () => void
   userId: string
 }
