@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SentenceCard from './SentenceCard'
 import MultiSentenceMode from './MultiSentenceMode'
 import ProgressTracker from './ProgressTracker'
 import ThemeToggle from './ThemeToggle'
 import { isConfigured } from '../lib/api'
-import type { Session, Sentence, SentenceProgress, AnalysisResult } from '../types'
+import { updateSessionSentences } from '../lib/firestoreSessions'
+import type { Session, Sentence, SentenceProgress, AnalysisResult, FuriganaSegment } from '../types'
 
 interface PracticePageProps {
   session: Session
+  firestoreDocId?: string | null
   darkMode: boolean
   onThemeToggle: () => void
   onNewSession: () => void
@@ -16,6 +18,7 @@ interface PracticePageProps {
 
 export default function PracticePage({
   session,
+  firestoreDocId,
   darkMode,
   onThemeToggle,
   onNewSession,
@@ -32,10 +35,39 @@ export default function PracticePage({
   const { session_id } = session
   const currentSentence = sentences[currentIndex]
 
+  // ── Debounced Firestore save ─────────────────────────────────────────────
+
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isFirstRender = useRef(true)
+
+  useEffect(() => {
+    // Skip the initial render — no need to save what was just loaded
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    if (!firestoreDocId) return
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      updateSessionSentences(firestoreDocId, sentences).catch(console.error)
+    }, 1500)
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    }
+  }, [sentences, firestoreDocId])
+
   // ── sentence mutations ──────────────────────────────────────────────────
 
   const updateSentenceText = (id: number, newText: string) => {
     setSentences((prev) => prev.map((s) => (s.id === id ? { ...s, text: newText } : s)))
+  }
+
+  const updateSentenceFurigana = (id: number, furigana: FuriganaSegment[]) => {
+    setSentences((prev) => prev.map((s) => (s.id === id ? { ...s, furigana } : s)))
+  }
+
+  const updateSentenceTranslation = (id: number, translation: string) => {
+    setSentences((prev) => prev.map((s) => (s.id === id ? { ...s, translation } : s)))
   }
 
   const mergeSentences = (index: number) => {
@@ -325,6 +357,8 @@ export default function PracticePage({
                 onScored={(score, result) => handleScored(currentSentence.id, score, result)}
                 onEditText={(newText) => updateSentenceText(currentSentence.id, newText)}
                 onSplit={(textA, textB) => splitSentence(currentIndex, textA, textB)}
+                onFuriganaFetched={(furigana) => updateSentenceFurigana(currentSentence.id, furigana)}
+                onTranslationFetched={(translation) => updateSentenceTranslation(currentSentence.id, translation)}
                 initialResult={progress[currentSentence.id]?.last_result ?? null}
                 onMultiMode={() => setShowMulti(true)}
               />

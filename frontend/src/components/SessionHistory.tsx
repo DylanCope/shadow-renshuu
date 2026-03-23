@@ -5,7 +5,7 @@ import type { Session } from '../types'
 
 interface SessionHistoryProps {
   userId: string
-  onResume: (session: Session) => void
+  onResume: (session: Session, docId: string) => void
 }
 
 export default function SessionHistory({ userId, onResume }: SessionHistoryProps) {
@@ -40,7 +40,7 @@ export default function SessionHistory({ userId, onResume }: SessionHistoryProps
       sentences: stored.sentences,
       audioUrl: stored.audioUrl,
     }
-    onResume(session)
+    onResume(session, stored.id)
   }
 
   if (loading) {

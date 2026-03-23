@@ -10,7 +10,7 @@ import type { Session } from '../types'
 interface UploadPageProps {
   darkMode: boolean
   onThemeToggle: () => void
-  onSession: (session: Session) => void
+  onSession: (session: Session, docId?: string) => void
   onChangeApiKey: () => void
   userId: string
 }
@@ -69,8 +69,8 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
     try {
       const session = await uploadAudio(file, transcript || undefined, (msg) => setLoadingMsg(msg))
       // Persist session to Firestore so it survives page reloads
-      await saveSession(userId, session, file.name.replace(/\.[^.]+$/, ''))
-      onSession(session)
+      const docId = await saveSession(userId, session, file.name.replace(/\.[^.]+$/, ''))
+      onSession(session, docId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {

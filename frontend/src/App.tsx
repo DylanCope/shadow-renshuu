@@ -9,9 +9,15 @@ import type { Session } from './types'
 
 function AppContent() {
   const [session, setSession] = useState<Session | null>(null)
+  const [sessionDocId, setSessionDocId] = useState<string | null>(null)
   const { darkMode, toggle } = useTheme()
   const [showKeyModal, setShowKeyModal] = useState(false)
   const { user, loading } = useAuth()
+
+  const handleSession = (s: Session, docId?: string) => {
+    setSession(s)
+    setSessionDocId(docId ?? null)
+  }
 
   if (loading) {
     return (
@@ -33,16 +39,17 @@ function AppContent() {
       {session ? (
         <PracticePage
           session={session}
+          firestoreDocId={sessionDocId}
           darkMode={darkMode}
           onThemeToggle={toggle}
-          onNewSession={() => setSession(null)}
+          onNewSession={() => { setSession(null); setSessionDocId(null) }}
           onChangeApiKey={() => setShowKeyModal(true)}
         />
       ) : (
         <UploadPage
           darkMode={darkMode}
           onThemeToggle={toggle}
-          onSession={setSession}
+          onSession={handleSession}
           onChangeApiKey={() => setShowKeyModal(true)}
           userId={user.uid}
         />

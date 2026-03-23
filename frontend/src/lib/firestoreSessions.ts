@@ -4,6 +4,7 @@ import {
   getDocs,
   deleteDoc,
   doc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -65,4 +66,11 @@ export async function getUserSessions(userId: string): Promise<StoredSession[]> 
 
 export async function deleteSession(sessionDocId: string): Promise<void> {
   await deleteDoc(doc(db, 'sessions', sessionDocId))
+}
+
+export async function updateSessionSentences(
+  sessionDocId: string,
+  sentences: Session['sentences'],
+): Promise<void> {
+  await updateDoc(doc(db, 'sessions', sessionDocId), { sentences })
 }

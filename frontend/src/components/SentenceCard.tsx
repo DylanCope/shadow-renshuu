@@ -16,6 +16,8 @@ interface SentenceCardProps {
   onScored: (score: number, result: AnalysisResult) => void
   onEditText: (newText: string) => void
   onSplit: (textA: string, textB: string) => void
+  onFuriganaFetched?: (furigana: FuriganaSegment[]) => void
+  onTranslationFetched?: (translation: string) => void
   initialResult?: AnalysisResult | null
   onMultiMode: () => void
 }
@@ -99,6 +101,8 @@ export default function SentenceCard({
   onScored,
   onEditText,
   onSplit,
+  onFuriganaFetched,
+  onTranslationFetched,
   initialResult,
   onMultiMode,
 }: SentenceCardProps) {
@@ -109,14 +113,14 @@ export default function SentenceCard({
   const [result, setResult] = useState<AnalysisResult | null>(initialResult ?? null)
   const [error, setError] = useState<string | null>(null)
 
-  // Furigana
-  const [furiganaSegments, setFuriganaSegments] = useState<FuriganaSegment[] | null>(null)
+  // Furigana — seed from cached value on the sentence if available
+  const [furiganaSegments, setFuriganaSegments] = useState<FuriganaSegment[] | null>(sentence.furigana ?? null)
   const [furiganaLoading, setFuriganaLoading] = useState(false)
 
-  // Translation
-  const [translation, setTranslation] = useState<string | null>(null)
+  // Translation — seed from cached value on the sentence if available
+  const [translation, setTranslation] = useState<string | null>(sentence.translation ?? null)
   const [translationLoading, setTranslationLoading] = useState(false)
-  const [translationRevealed, setTranslationRevealed] = useState(false)
+  const [translationRevealed, setTranslationRevealed] = useState(sentence.translation != null)
   const [showTranslation, setShowTranslation] = useState(false)
 
   // Playback of own recording
@@ -170,9 +174,9 @@ export default function SentenceCard({
     setError(null)
     setEditing(false)
     setEditDraft(sentence.text)
-    setFuriganaSegments(null)
-    setTranslation(null)
-    setTranslationRevealed(false)
+    setFuriganaSegments(sentence.furigana ?? null)
+    setTranslation(sentence.translation ?? null)
+    setTranslationRevealed(sentence.translation != null)
     setShowTranslation(false)
     setRecordingUrl(null)
     setRecorded(false)
@@ -200,7 +204,10 @@ export default function SentenceCard({
     if (showTranslation) {
       setTranslationLoading(true)
       getTranslation(sentence.text)
-        .then(setTranslation)
+        .then((t) => {
+          setTranslation(t)
+          onTranslationFetched?.(t)
+        })
         .catch((err) => setTranslation(`(${err instanceof Error ? err.message : 'Translation failed'})`))
         .finally(() => setTranslationLoading(false))
     }
@@ -211,7 +218,10 @@ export default function SentenceCard({
     if (!showFurigana || furiganaSegments) return
     setFuriganaLoading(true)
     getFurigana(sentence.text)
-      .then(setFuriganaSegments)
+      .then((segs) => {
+        setFuriganaSegments(segs)
+        onFuriganaFetched?.(segs)
+      })
       .catch(() => setFuriganaSegments([{ base: sentence.text }]))
       .finally(() => setFuriganaLoading(false))
   }, [showFurigana, sentence.text, furiganaSegments])
@@ -311,7 +321,10 @@ export default function SentenceCard({
     if (translation) return
     setTranslationLoading(true)
     getTranslation(sentence.text)
-      .then(setTranslation)
+      .then((t) => {
+        setTranslation(t)
+        onTranslationFetched?.(t)
+      })
       .catch((err) => setTranslation(`(${err instanceof Error ? err.message : 'Translation failed'})`))
       .finally(() => setTranslationLoading(false))
   }

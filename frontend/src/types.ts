@@ -9,6 +9,8 @@ export interface Sentence {
   start: number;
   end: number;
   segmentUrls: string[];  // array to support merged sentences
+  translation?: string;
+  furigana?: FuriganaSegment[];
 }
 
 export interface Session {
