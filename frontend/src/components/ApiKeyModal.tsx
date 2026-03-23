@@ -253,7 +253,12 @@ export default function ApiKeyModal({ onSave, onDismiss }: ApiKeyModalProps) {
           {/* Actions */}
           <div className="flex gap-2">
             <button
-              onClick={onDismiss}
+              onClick={() => {
+                // Always persist transcription settings on close, even without re-verifying key
+                setWhisperModel(whisperModel)
+                setLlmCorrection(llmCorrection)
+                onDismiss?.()
+              }}
               disabled={verifying}
               className="flex-1 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
             >
