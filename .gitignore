@@ -4,3 +4,10 @@ backend/uploads
 # Python
 **/__pycache__/
 **/*.pyc
+
+# Env files with secrets (never commit)
+.env
+.env.local
+.env.*.local
+frontend/.env
+backend/.env
