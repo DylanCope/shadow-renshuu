@@ -37,11 +37,69 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────
+# Firebase Admin SDK — optional; enabled when env vars are set
+# ─────────────────────────────────────────────
+
+_firebase_initialized = False
+
+
+def init_firebase() -> None:
+    """Initialise Firebase Admin SDK from FIREBASE_SERVICE_ACCOUNT_JSON env var."""
+    global _firebase_initialized
+    if _firebase_initialized:
+        return
+    service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
+    if not service_account_json or not bucket_name:
+        logger.info("Firebase Storage not configured — audio will be served from backend.")
+        return
+    try:
+        import firebase_admin
+        from firebase_admin import credentials as fb_creds
+        cred_dict = json.loads(service_account_json)
+        cred = fb_creds.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
+        _firebase_initialized = True
+        logger.info("Firebase Admin SDK initialised (bucket: %s)", bucket_name)
+    except Exception as exc:
+        logger.warning("Firebase Admin SDK init failed: %s", exc)
+
+
+def upload_to_firebase(local_path: Path, dest_path: str) -> Optional[str]:
+    """Upload a file to Firebase Storage and return a persistent download URL.
+
+    Returns None if Firebase is not configured or the upload fails.
+    """
+    if not _firebase_initialized:
+        return None
+    try:
+        from firebase_admin import storage as fb_storage
+        bucket = fb_storage.bucket()
+        blob = bucket.blob(dest_path)
+        blob.upload_from_filename(str(local_path))
+        # Attach a download token so the URL matches the Firebase client-SDK format
+        # and works without making the bucket publicly readable.
+        download_token = str(uuid.uuid4())
+        blob.metadata = {"firebaseStorageDownloadTokens": download_token}
+        blob.patch()
+        encoded_path = dest_path.replace("/", "%2F")
+        url = (
+            f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}"
+            f"/o/{encoded_path}?alt=media&token={download_token}"
+        )
+        logger.info("Uploaded %s → %s", local_path.name, dest_path)
+        return url
+    except Exception as exc:
+        logger.warning("Firebase upload failed for %s: %s", dest_path, exc)
+        return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Pre-load the Whisper model at startup so the first request isn't slow
     # and Railway's health check doesn't time out waiting.
+    init_firebase()
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, get_model)
     yield
@@ -105,6 +163,11 @@ def _run_job_thread(
                     last_end = sentences_raw[-1]["end"] if sentences_raw else 0.0
                     sentences_raw.append({"text": line, "start": last_end, "end": last_end + 3.0})
 
+        # Upload original audio to Firebase Storage (best-effort)
+        firebase_audio_url = upload_to_firebase(
+            audio_path, f"sessions/{session_id}/{audio_filename}"
+        )
+
         sentences_out = []
         for idx, s in enumerate(sentences_raw):
             try:
@@ -115,13 +178,21 @@ def _run_job_thread(
                 logger.warning(f"Could not split segment {idx}: {e}")
                 seg_filename = audio_filename
 
+            seg_path = sdir / seg_filename
+            firebase_seg_url = upload_to_firebase(
+                seg_path, f"sessions/{session_id}/{seg_filename}"
+            )
+            segment_url = firebase_seg_url or f"/api/audio/{session_id}/{seg_filename}"
+
             sentences_out.append({
                 "id": idx,
                 "text": s["text"],
                 "start": s["start"],
                 "end": s["end"],
-                "segmentUrl": f"/api/audio/{session_id}/{seg_filename}",
+                "segmentUrl": segment_url,
             })
+
+        audio_url = firebase_audio_url or f"/api/audio/{session_id}/{audio_filename}"
 
         jobs[job_id].update({
             "status": "done",
@@ -129,7 +200,7 @@ def _run_job_thread(
             "result": {
                 "session_id": session_id,
                 "sentences": sentences_out,
-                "audioUrl": f"/api/audio/{session_id}/{audio_filename}",
+                "audioUrl": audio_url,
             },
             "ts": time.time(),
         })

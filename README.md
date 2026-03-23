@@ -36,7 +36,7 @@ shadow-renshuu/
 
 The frontend is a static SPA; all AI calls go through the backend. Audio files are stored on the backend server temporarily. The Whisper model runs on the backend (no external API needed for transcription).
 
-Authentication and session metadata are stored in **Firebase** (Auth + Firestore). Audio segment URLs still point to Railway, so if the backend is restarted previously saved sessions will need their audio re-uploaded.
+Authentication and session metadata are stored in **Firebase** (Auth + Firestore). Audio files are uploaded to **Firebase Storage** during processing, so segment URLs are permanent and survive backend restarts and redeployments.
 
 ---
 
@@ -107,6 +107,8 @@ For Firebase Auth to work locally you must add the six `VITE_FIREBASE_*` variabl
 |---|---|---|
 | `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS origins. Set to `*` to allow all. |
 | `WHISPER_MODEL` | `tiny` | Whisper model size. Options: `tiny`, `base`, `small`, `medium`, `large`. Larger = more accurate but slower and uses more RAM. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | — | Full JSON content of a Firebase service account key (see [Firebase Setup](#firebase-setup)). Required for audio to persist in Firebase Storage. |
+| `FIREBASE_STORAGE_BUCKET` | — | Firebase Storage bucket name, e.g. `your-project.appspot.com` or `your-project.firebasestorage.app`. |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -181,7 +183,42 @@ Firebase provides user authentication (Google OAuth + passwordless email link) a
 3. Enable **Email/Password**, then toggle on **Email link (passwordless sign-in)** and save
 4. Under **Authentication → Settings → Authorised domains**, add your Vercel deployment domain (e.g. `shadow-renshuu.vercel.app`)
 
-### 3. Create a Firestore database
+### 3. Enable Firebase Storage
+
+1. In the Firebase Console, open **Storage** and click **Get started**
+2. Accept the default security rules for now (you'll tighten them in the next step) and choose a region
+3. Once created, note the bucket name shown at the top of the Storage page — it looks like `your-project.appspot.com` or `your-project.firebasestorage.app`
+
+#### Storage security rules
+
+In **Storage → Rules**, replace the default rules so that only authenticated users can read files and only the backend service account can write:
+
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /sessions/{sessionId}/{allPaths=**} {
+      // Any signed-in user can read their session audio
+      allow read: if request.auth != null;
+      // Writes come from the backend service account only (not from the browser)
+      allow write: if false;
+    }
+  }
+}
+```
+
+> The backend uploads files using the Admin SDK (service account), which bypasses Storage security rules entirely. The rules above only restrict browser client access.
+
+### 4. Create a service account for the backend
+
+The backend needs a service account key to upload files to Firebase Storage and to initialise the Admin SDK.
+
+1. In the Firebase Console, go to **Project settings → Service accounts**
+2. Click **Generate new private key** and confirm — a JSON file will be downloaded
+3. Keep this file secret — treat it like a password
+4. You will paste the **entire contents** of this JSON file as the `FIREBASE_SERVICE_ACCOUNT_JSON` environment variable on Railway (see [Backend → Railway](#backend--railway) below)
+
+### 5. Create a Firestore database
 
 1. Open **Firestore Database** and click **Create database**
 2. Choose **Production mode** (you will add security rules next)
@@ -212,13 +249,13 @@ The session list query requires a composite index. Either deploy it via the Fire
 
 You can also let the app create it automatically — Firestore will log a link to create the index the first time the query runs.
 
-### 4. Get your Firebase config
+### 6. Get your Firebase config
 
 1. In the Firebase Console, open **Project settings → General**
 2. Under **Your apps**, click the **Web** icon (`</>`) to register a web app if you haven't already
 3. Copy the `firebaseConfig` values — you will need all six fields
 
-### 5. Set environment variables
+### 7. Set environment variables
 
 **Local development** — add to `frontend/.env.local`:
 
@@ -268,8 +305,14 @@ The `vercel.json` at the repo root configures everything automatically.
 2. Set the **Root Directory** to `backend`
 3. Railway will detect the `Dockerfile` and build a CPU-only image automatically
 4. Set the following **Environment Variables** in Railway:
-   - `ALLOWED_ORIGINS` → `*` (or your specific Vercel URL)
-   - `WHISPER_MODEL` → `tiny` (or `base`/`small` if your plan has enough RAM; `base` needs ~1GB, `small` ~2GB)
+
+   | Variable | Value |
+   |---|---|
+   | `ALLOWED_ORIGINS` | `*` (or your specific Vercel URL) |
+   | `WHISPER_MODEL` | `tiny` (or `base`/`small` for better accuracy — needs more RAM; see guide below) |
+   | `FIREBASE_SERVICE_ACCOUNT_JSON` | Paste the **entire contents** of the service account JSON file you downloaded in the Firebase setup |
+   | `FIREBASE_STORAGE_BUCKET` | Your Storage bucket name, e.g. `your-project.appspot.com` |
+
 5. Deploy — the first deploy will take several minutes while the Docker image is built
 
 > **Memory guide:** `tiny` ~200MB, `base` ~500MB, `small` ~1GB, `medium` ~3GB, `large` ~6GB.
@@ -290,6 +333,7 @@ The `vercel.json` at the repo root configures everything automatically.
 | Containerisation | Docker (CPU-only PyTorch) |
 | Authentication | Firebase Auth (Google OAuth + email link) |
 | Session storage | Firebase Firestore |
+| Audio storage | Firebase Storage |
 
 ---
 

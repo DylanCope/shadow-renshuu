@@ -250,6 +250,14 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
           )}
         </button>
 
+        {/* Previous sessions */}
+        <div className="mt-10">
+          <h2 className="font-semibold text-base mb-3 text-gray-700 dark:text-gray-300">
+            Previous Sessions
+          </h2>
+          <SessionHistory userId={userId} onResume={onSession} />
+        </div>
+
         {/* How it works */}
         <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
@@ -275,14 +283,6 @@ export default function UploadPage({ darkMode, onThemeToggle, onSession, onChang
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{item.desc}</p>
             </div>
           ))}
-        </div>
-
-        {/* Previous sessions */}
-        <div className="mt-10">
-          <h2 className="font-semibold text-base mb-3 text-gray-700 dark:text-gray-300">
-            Previous Sessions
-          </h2>
-          <SessionHistory userId={userId} onResume={onSession} />
         </div>
       </main>
     </div>
