@@ -149,20 +149,18 @@ export default function SentenceCard({
   const audioRefs = useRef<HTMLAudioElement[]>([])
   const recorder = useAudioRecorder()
 
-  // Enumerate microphones when entering record mode
+  // Enumerate microphones when entering record mode.
+  // We do NOT call getUserMedia here — that must happen inside a user gesture (the record button).
+  // Labels will be blank on first visit but device IDs are enough for selection.
   useEffect(() => {
     if (mode !== 'record') return
     const enumerate = async () => {
       try {
-        // Request permission so labels are populated (browsers hide labels otherwise)
-        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        tempStream.getTracks().forEach(t => t.stop())
         const all = await navigator.mediaDevices.enumerateDevices()
         const mics = all.filter(d => d.kind === 'audioinput')
         setMicDevices(mics)
-        // Pre-select the first device only if nothing is selected yet
         setSelectedMicId(prev => prev || (mics[0]?.deviceId ?? ''))
-      } catch { /* permission denied — no mic selector shown */ }
+      } catch { /* mediaDevices unavailable */ }
     }
     enumerate()
   }, [mode])
@@ -683,16 +681,17 @@ export default function SentenceCard({
                     disabled={analyzing || transcribing}
                   />
 
-                  {/* Mic selector — shown when multiple mics are available */}
-                  {!recorder.isRecording && (
+                  {/* Mic selector — only shown on non-touch desktop where multiple mics may exist */}
+                  {!recorder.isRecording && navigator.maxTouchPoints === 0 && (
                     <MicSelector
                       devices={micDevices}
                       selectedId={selectedMicId}
                       onSelect={setSelectedMicId}
                       onEnumerate={async () => {
                         try {
-                          // Request permission first so labels are populated
-                          await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()))
+                          // Request permission so labels are populated, then re-enumerate
+                          const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+                          s.getTracks().forEach(t => t.stop())
                           const all = await navigator.mediaDevices.enumerateDevices()
                           const mics = all.filter(d => d.kind === 'audioinput')
                           setMicDevices(mics)
@@ -700,6 +699,16 @@ export default function SentenceCard({
                         } catch { /* permission denied — silently ignore */ }
                       }}
                     />
+                  )}
+
+                  {/* Show recording errors (e.g. permission denied) */}
+                  {recorder.error && (
+                    <p className="text-xs text-red-500 dark:text-red-400 text-center max-w-xs">
+                      {recorder.error.includes('Permission') || recorder.error.includes('denied') || recorder.error.includes('NotAllowed')
+                        ? 'Microphone access was denied. Please allow microphone access in your browser settings and try again.'
+                        : recorder.error
+                      }
+                    </p>
                   )}
                 </div>
               )}

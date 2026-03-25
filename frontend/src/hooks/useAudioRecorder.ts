@@ -23,7 +23,7 @@ export function useAudioRecorder() {
     return new Promise(async (resolve, reject) => {
       try {
         const audioConstraints: MediaStreamConstraints['audio'] = deviceId
-          ? { deviceId: { exact: deviceId } }
+          ? { deviceId: { ideal: deviceId } }
           : true
         const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
 
