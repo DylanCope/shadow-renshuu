@@ -22,6 +22,9 @@ export function useAudioRecorder() {
   const startRecording = useCallback((deviceId?: string): Promise<Blob> => {
     return new Promise(async (resolve, reject) => {
       try {
+        // Clear any error from a previous attempt before trying again
+        setState(s => ({ ...s, error: null }))
+
         const audioConstraints: MediaStreamConstraints['audio'] = deviceId
           ? { deviceId: { ideal: deviceId } }
           : true

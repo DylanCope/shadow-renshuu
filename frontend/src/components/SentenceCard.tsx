@@ -150,17 +150,23 @@ export default function SentenceCard({
   const recorder = useAudioRecorder()
 
   // Enumerate microphones when entering record mode.
-  // We do NOT call getUserMedia here — that must happen inside a user gesture (the record button).
-  // Labels will be blank on first visit but device IDs are enough for selection.
+  // On desktop: proactively call getUserMedia to trigger the permission prompt and populate
+  // device labels. On mobile (touch devices) we skip this — getUserMedia must come from a
+  // direct button-press gesture; we only enumerate devices without requesting permission.
   useEffect(() => {
     if (mode !== 'record') return
     const enumerate = async () => {
       try {
+        if (navigator.maxTouchPoints === 0) {
+          // Desktop: request permission early so the record button works immediately
+          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          tempStream.getTracks().forEach(t => t.stop())
+        }
         const all = await navigator.mediaDevices.enumerateDevices()
         const mics = all.filter(d => d.kind === 'audioinput')
         setMicDevices(mics)
         setSelectedMicId(prev => prev || (mics[0]?.deviceId ?? ''))
-      } catch { /* mediaDevices unavailable */ }
+      } catch { /* permission denied or mediaDevices unavailable */ }
     }
     enumerate()
   }, [mode])
