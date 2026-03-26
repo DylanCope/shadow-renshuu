@@ -140,6 +140,7 @@ export default function SentenceCard({
   // Mic device selection
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedMicId, setSelectedMicId] = useState<string>('')
+  const [micPermission, setMicPermission] = useState<string>('unknown')
 
   // Edit mode
   const [editing, setEditing] = useState(false)
@@ -156,21 +157,43 @@ export default function SentenceCard({
   // the permission prompt from appearing on Android Chrome.
   useEffect(() => {
     if (mode !== 'record') return
-    // Skip all device enumeration on touch/mobile devices.
-    if (navigator.maxTouchPoints > 0) return
-    const enumerate = async () => {
-      try {
-        // Desktop: request permission early so the record button works immediately
-        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        tempStream.getTracks().forEach(t => t.stop())
-        const all = await navigator.mediaDevices.enumerateDevices()
-        const mics = all.filter(d => d.kind === 'audioinput')
-        setMicDevices(mics)
-        setSelectedMicId(prev => prev || (mics[0]?.deviceId ?? ''))
-      } catch { /* permission denied or mediaDevices unavailable */ }
+
+    // Clear stale recorder errors from a previous attempt
+    recorder.clearError()
+
+    let permStatus: PermissionStatus | null = null
+
+    // Check permission state via Permissions API (works on Android Chrome, not iOS Safari).
+    // This lets us show guidance BEFORE the user taps the record button if mic is blocked.
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'microphone' as PermissionName })
+        .then(status => {
+          permStatus = status
+          setMicPermission(status.state)
+          status.onchange = () => setMicPermission(status.state)
+        })
+        .catch(() => setMicPermission('unknown'))
     }
-    enumerate()
-  }, [mode])
+
+    // Desktop only: request mic + enumerate devices so the selector is populated
+    if (navigator.maxTouchPoints === 0) {
+      const enumerate = async () => {
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          tempStream.getTracks().forEach(t => t.stop())
+          const all = await navigator.mediaDevices.enumerateDevices()
+          const mics = all.filter(d => d.kind === 'audioinput')
+          setMicDevices(mics)
+          setSelectedMicId(prev => prev || (mics[0]?.deviceId ?? ''))
+        } catch { /* permission denied or mediaDevices unavailable */ }
+      }
+      enumerate()
+    }
+
+    return () => {
+      if (permStatus) permStatus.onchange = null
+    }
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setMode('listen')
     setShowTranscript(true)
@@ -259,6 +282,8 @@ export default function SentenceCard({
     setRecordingUrl(null)
     setRecorded(false)
     blobPromiseRef.current = recorder.startRecording(selectedMicId || undefined)
+    // Prevent unhandled promise rejection — errors are displayed via recorder.error
+    blobPromiseRef.current.catch(() => {})
   }
 
   const handleStopRecording = async () => {
@@ -680,6 +705,18 @@ export default function SentenceCard({
               {/* Phase 1: record button — hide once stopped and reviewed */}
               {!recorded && (
                 <div className="flex flex-col items-center gap-3">
+
+                  {/* Proactive guidance when mic permission is blocked at the site level */}
+                  {micPermission === 'denied' && (
+                    <div className="text-xs text-center max-w-xs space-y-1.5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                      <p className="font-medium text-amber-600 dark:text-amber-400">Microphone is blocked for this site</p>
+                      <p className="text-amber-600/80 dark:text-amber-400/80">
+                        Tap the <strong>🔒</strong> icon in the address bar, tap <strong>Permissions</strong>,
+                        set <strong>Microphone</strong> to <strong>Allow</strong>, then reload the page.
+                      </p>
+                    </div>
+                  )}
+
                   <RecordButton
                     isRecording={recorder.isRecording}
                     duration={recorder.duration}

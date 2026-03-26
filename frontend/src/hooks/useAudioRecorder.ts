@@ -90,7 +90,7 @@ export function useAudioRecorder() {
         })
       })
       .catch(err => {
-        const message = err instanceof Error ? err.message : 'Microphone access denied'
+        const message = (err instanceof Error && err.message) || 'Microphone access denied'
         setState({ isRecording: false, duration: 0, error: message })
         throw new Error(message)
       })
@@ -102,5 +102,9 @@ export function useAudioRecorder() {
     }
   }, [])
 
-  return { ...state, startRecording, stopRecording }
+  const clearError = useCallback(() => {
+    setState(s => ({ ...s, error: null }))
+  }, [])
+
+  return { ...state, startRecording, stopRecording, clearError }
 }
