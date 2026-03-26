@@ -151,17 +151,18 @@ export default function SentenceCard({
 
   // Enumerate microphones when entering record mode.
   // On desktop: proactively call getUserMedia to trigger the permission prompt and populate
-  // device labels. On mobile (touch devices) we skip this — getUserMedia must come from a
-  // direct button-press gesture; we only enumerate devices without requesting permission.
+  // device labels. On mobile we skip device enumeration entirely — the mic selector is not
+  // shown on touch devices and calling enumerateDevices() before getUserMedia() can prevent
+  // the permission prompt from appearing on Android Chrome.
   useEffect(() => {
     if (mode !== 'record') return
+    // Skip all device enumeration on touch/mobile devices.
+    if (navigator.maxTouchPoints > 0) return
     const enumerate = async () => {
       try {
-        if (navigator.maxTouchPoints === 0) {
-          // Desktop: request permission early so the record button works immediately
-          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          tempStream.getTracks().forEach(t => t.stop())
-        }
+        // Desktop: request permission early so the record button works immediately
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        tempStream.getTracks().forEach(t => t.stop())
         const all = await navigator.mediaDevices.enumerateDevices()
         const mics = all.filter(d => d.kind === 'audioinput')
         setMicDevices(mics)
@@ -707,14 +708,24 @@ export default function SentenceCard({
                     />
                   )}
 
-                  {/* Show recording errors (e.g. permission denied) */}
+                   {/* Show recording errors (e.g. permission denied) */}
                   {recorder.error && (
-                    <p className="text-xs text-red-500 dark:text-red-400 text-center max-w-xs">
+                    <div className="text-xs text-red-500 dark:text-red-400 text-center max-w-xs space-y-1">
                       {recorder.error.includes('Permission') || recorder.error.includes('denied') || recorder.error.includes('NotAllowed')
-                        ? 'Microphone access was denied. Please allow microphone access in your browser settings and try again.'
-                        : recorder.error
+                        ? (
+                          <>
+                            <p>Microphone access was denied.</p>
+                            <p>
+                              {navigator.maxTouchPoints > 0
+                                ? 'Tap the lock/info icon in your browser\'s address bar and set Microphone to Allow, then reload the page.'
+                                : 'Please allow microphone access in your browser settings and try again.'
+                              }
+                            </p>
+                          </>
+                        )
+                        : <p>{recorder.error}</p>
                       }
-                    </p>
+                    </div>
                   )}
                 </div>
               )}

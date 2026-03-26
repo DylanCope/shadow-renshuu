@@ -269,6 +269,26 @@ export default function MultiSentenceMode({
                   </div>
                 )}
 
+                {/* Show microphone errors */}
+                {recorder.error && (
+                  <div className="text-xs text-red-500 dark:text-red-400 text-center max-w-xs space-y-1">
+                    {recorder.error.includes('Permission') || recorder.error.includes('denied') || recorder.error.includes('NotAllowed')
+                      ? (
+                        <>
+                          <p>Microphone access was denied.</p>
+                          <p>
+                            {navigator.maxTouchPoints > 0
+                              ? "Tap the lock/info icon in your browser's address bar and set Microphone to Allow, then reload the page."
+                              : 'Please allow microphone access in your browser settings and try again.'
+                            }
+                          </p>
+                        </>
+                      )
+                      : <p>{recorder.error}</p>
+                    }
+                  </div>
+                )}
+
                 {showManual && !analyzing && (
                   <div className="w-full space-y-3">
                     <p className="text-sm text-gray-500 dark:text-gray-400 text-center">

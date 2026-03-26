@@ -20,16 +20,24 @@ export function useAudioRecorder() {
   const rejectRef = useRef<((err: Error) => void) | null>(null)
 
   const startRecording = useCallback((deviceId?: string): Promise<Blob> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Clear any error from a previous attempt before trying again
-        setState(s => ({ ...s, error: null }))
+    // Clear any error from a previous attempt before trying again
+    setState(s => ({ ...s, error: null }))
 
-        const audioConstraints: MediaStreamConstraints['audio'] = deviceId
-          ? { deviceId: { ideal: deviceId } }
-          : true
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
+    // Guard: mediaDevices is only available in secure contexts (HTTPS / localhost).
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const msg = 'Microphone access is not available. Please use HTTPS and ensure microphone permissions are enabled.'
+      setState({ isRecording: false, duration: 0, error: msg })
+      return Promise.reject(new Error(msg))
+    }
 
+    const audioConstraints: MediaStreamConstraints['audio'] = deviceId
+      ? { deviceId: { ideal: deviceId } }
+      : true
+
+    // Call getUserMedia directly (not inside new Promise(async ...)) so that
+    // Android Chrome properly associates this call with the user gesture.
+    return navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
+      .then(stream => {
         // Prefer webm/opus, fall back to whatever the browser supports
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
@@ -37,54 +45,55 @@ export function useAudioRecorder() {
           ? 'audio/webm'
           : ''
 
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
-        mediaRecorderRef.current = recorder
-        chunksRef.current = []
-        resolveRef.current = resolve
-        rejectRef.current = reject
+        return new Promise<Blob>((resolve, reject) => {
+          const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+          mediaRecorderRef.current = recorder
+          chunksRef.current = []
+          resolveRef.current = resolve
+          rejectRef.current = reject
 
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            chunksRef.current.push(e.data)
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              chunksRef.current.push(e.data)
+            }
           }
-        }
 
-        recorder.onstop = () => {
-          stream.getTracks().forEach((t) => t.stop())
-          // Use the recorder's actual mimeType — on iOS Safari the browser picks
-          // audio/mp4 and mimeType (our preferred webm) is '' from isTypeSupported.
-          const actualType = recorder.mimeType || mimeType || 'audio/webm'
-          const blob = new Blob(chunksRef.current, { type: actualType })
-          resolveRef.current?.(blob)
+          recorder.onstop = () => {
+            stream.getTracks().forEach((t) => t.stop())
+            // Use the recorder's actual mimeType — on iOS Safari the browser picks
+            // audio/mp4 and mimeType (our preferred webm) is '' from isTypeSupported.
+            const actualType = recorder.mimeType || mimeType || 'audio/webm'
+            const blob = new Blob(chunksRef.current, { type: actualType })
+            resolveRef.current?.(blob)
 
-          if (timerRef.current) {
-            clearInterval(timerRef.current)
-            timerRef.current = null
+            if (timerRef.current) {
+              clearInterval(timerRef.current)
+              timerRef.current = null
+            }
+            setState({ isRecording: false, duration: 0, error: null })
           }
-          setState({ isRecording: false, duration: 0, error: null })
-        }
 
-        recorder.onerror = (e) => {
-          rejectRef.current?.(new Error(`Recording error: ${e}`))
-          setState((s) => ({ ...s, isRecording: false, error: 'Recording failed' }))
-        }
+          recorder.onerror = (e) => {
+            rejectRef.current?.(new Error(`Recording error: ${e}`))
+            setState((s) => ({ ...s, isRecording: false, error: 'Recording failed' }))
+          }
 
-        recorder.start(100) // collect data every 100ms
+          recorder.start(100) // collect data every 100ms
 
-        let seconds = 0
-        timerRef.current = setInterval(() => {
-          seconds += 1
-          setState((s) => ({ ...s, duration: seconds }))
-        }, 1000)
+          let seconds = 0
+          timerRef.current = setInterval(() => {
+            seconds += 1
+            setState((s) => ({ ...s, duration: seconds }))
+          }, 1000)
 
-        setState({ isRecording: true, duration: 0, error: null })
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Microphone access denied'
+          setState({ isRecording: true, duration: 0, error: null })
+        })
+      })
+      .catch(err => {
+        const message = err instanceof Error ? err.message : 'Microphone access denied'
         setState({ isRecording: false, duration: 0, error: message })
-        reject(new Error(message))
-      }
-    })
+        throw new Error(message)
+      })
   }, [])
 
   const stopRecording = useCallback(() => {
